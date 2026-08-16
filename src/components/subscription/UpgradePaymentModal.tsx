@@ -42,6 +42,7 @@ export const UpgradePaymentModal: React.FC<UpgradePaymentModalProps> = ({
   const [countdown, setCountdown] = useState<number>(11);
   const [copiedUpi, setCopiedUpi] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
+  const [persistenceError, setPersistenceError] = useState<string | null>(null);
 
   const upiId = '8520981574@ybl';
 
@@ -127,25 +128,43 @@ export const UpgradePaymentModal: React.FC<UpgradePaymentModalProps> = ({
   };
 
   const handleStartVerification = () => {
+    setPersistenceError(null);
     setCountdown(11);
     setPaymentState('verifying');
   };
 
   const handleSimulatedPaymentSuccess = async () => {
+    setPersistenceError(null);
     try {
-      await upgradePlan(planDetails.id, planDetails.billingPeriod, planDetails.amountNumeric);
+      // 1. Read the CURRENT selected plan, billing period, and price
+      const target = planDetails.id;
+      const period = planDetails.billingPeriod;
+      const amount = planDetails.amountNumeric;
+
+      // 2. Persist to authoritative backend, verify write, and update React state
+      const verifiedPlan = await upgradePlan(target, period, amount);
+
+      if (verifiedPlan !== target) {
+        throw new Error(`Verified plan (${verifiedPlan}) did not match requested target plan (${target}).`);
+      }
+
+      // 3. ONLY THEN transition to payment success
       setPaymentState('success');
       if (onSuccess) {
-        onSuccess(planDetails.id);
+        onSuccess(verifiedPlan);
       }
     } catch (e) {
-      console.error('Plan upgrade error', e);
+      const errMessage = e instanceof Error ? e.message : 'Subscription persistence failed.';
+      console.error('[Payment Upgrade Persistence Error]:', errMessage);
+      setPersistenceError(errMessage);
+      setPaymentState('scan');
     }
   };
 
   const handleClose = () => {
     setPaymentState('scan');
     setCountdown(11);
+    setPersistenceError(null);
     onClose();
   };
 
@@ -193,6 +212,16 @@ export const UpgradePaymentModal: React.FC<UpgradePaymentModalProps> = ({
         <div className="p-6 space-y-6">
           {paymentState === 'scan' && (
             <div className="space-y-5">
+              {/* Persistence Error Alert if upgrade failed */}
+              {persistenceError && (
+                <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300 text-xs flex items-start gap-2.5">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600 dark:text-rose-400" />
+                  <div>
+                    <span className="font-bold">Subscription Persistence Failed:</span> {persistenceError}
+                  </div>
+                </div>
+              )}
+
               {/* Notice Banner */}
               <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/80 text-amber-800 dark:text-amber-300 text-xs flex items-start gap-2.5">
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />

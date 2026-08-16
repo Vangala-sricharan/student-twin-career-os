@@ -145,8 +145,13 @@ export const cloudStore = {
     plan: SubscriptionPlan,
     billingPeriod: 'monthly' | 'annual' = 'annual',
     price: number = 1499
-  ): Promise<void> {
-    if (!userId || userId === 'guest_user') return;
+  ): Promise<{ success: boolean; plan: SubscriptionPlan }> {
+    if (!userId || userId === 'guest_user') {
+      const err = 'User is not authenticated. Cannot persist subscription.';
+      console.error('[cloudStore.setUserPlan Error]:', err);
+      throw new Error(err);
+    }
+
     try {
       // 1. Update local cache
       localStorage.setItem(`${USER_PLAN_PREFIX}${userId}`, plan);
@@ -170,25 +175,57 @@ export const cloudStore = {
           updated_at: new Date().toISOString(),
         };
 
-        // Update user metadata in Supabase Auth
-        await supabase.auth.updateUser({
+        // Update user metadata in Supabase Auth (authoritative)
+        const { data: updateData, error: authUpdateError } = await supabase.auth.updateUser({
           data: {
             student_twin_plan: plan,
             student_twin_subscription: subscriptionRecord,
+            ...(existing ? { student_twin_backup: existing } : {}),
           },
         });
 
-        // Safely update subscriptions / profiles table if they exist
-        try {
-          await supabase.from('subscriptions').upsert(subscriptionRecord);
-        } catch {}
+        if (authUpdateError) {
+          console.error('[Supabase Auth updateUser Error]:', {
+            message: authUpdateError.message,
+            status: authUpdateError.status,
+            code: (authUpdateError as any).code,
+            userId,
+          });
+          throw new Error(`Supabase Auth Update Failed: ${authUpdateError.message}`);
+        }
 
-        try {
-          await supabase.from('profiles').update({ plan }).eq('id', userId);
-        } catch {}
+        console.log('[Supabase Auth updateUser Success]:', {
+          userId: updateData?.user?.id,
+          savedPlan: updateData?.user?.user_metadata?.student_twin_plan,
+        });
+
+        // Update subscriptions table if it exists in project schema
+        const { error: subTableError } = await supabase.from('subscriptions').upsert(subscriptionRecord);
+        if (subTableError) {
+          console.warn('[Supabase Subscriptions Table Notice]:', {
+            message: subTableError.message,
+            code: subTableError.code,
+            details: subTableError.details,
+            hint: subTableError.hint,
+          });
+        }
+
+        // Update profiles table if it exists in project schema
+        const { error: profTableError } = await supabase.from('profiles').update({ plan }).eq('id', userId);
+        if (profTableError) {
+          console.warn('[Supabase Profiles Table Notice]:', {
+            message: profTableError.message,
+            code: profTableError.code,
+            details: profTableError.details,
+            hint: profTableError.hint,
+          });
+        }
       }
+
+      return { success: true, plan };
     } catch (e) {
-      console.error('Failed to set user plan in cloudStore', e);
+      console.error('[cloudStore.setUserPlan Failure]:', e);
+      throw e;
     }
   },
 

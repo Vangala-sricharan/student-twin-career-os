@@ -168,7 +168,7 @@ export interface StudentTwinContextType {
 
   // Subscription Plan
   plan: SubscriptionPlan;
-  upgradePlan: (newPlan: SubscriptionPlan, billingPeriod?: 'monthly' | 'annual', price?: number) => Promise<void>;
+  upgradePlan: (newPlan: SubscriptionPlan, billingPeriod?: 'monthly' | 'annual', price?: number) => Promise<SubscriptionPlan>;
 
   // Onboarding
   isOnboardingOpen: boolean;
@@ -496,13 +496,19 @@ export const StudentTwinProvider: React.FC<{ children: React.ReactNode }> = ({ c
     newPlan: SubscriptionPlan,
     billingPeriod?: 'monthly' | 'annual',
     price?: number
-  ) => {
-    setPlan(newPlan);
+  ): Promise<SubscriptionPlan> => {
     const resolvedPeriod = billingPeriod || (newPlan === 'pro_monthly' ? 'monthly' : 'annual');
-    const resolvedPrice = price || (newPlan === 'pro_monthly' ? 299 : newPlan === 'pro_annual' ? 1499 : 0);
+    const resolvedPrice = price ?? (newPlan === 'pro_monthly' ? 299 : newPlan === 'pro_annual' ? 1499 : 0);
+    
+    // 1. Authoritative persistence in Supabase & cloudStore (throws if fails)
     await cloudStore.setUserPlan(userId, newPlan, resolvedPeriod, resolvedPrice);
-    const refreshedPlan = await cloudStore.getUserPlan(userId);
-    setPlan(refreshedPlan);
+    
+    // 2. Re-fetch and verify authoritative plan
+    const verifiedPlan = await cloudStore.getUserPlan(userId);
+    
+    // 3. Update React state with verified plan
+    setPlan(verifiedPlan);
+    return verifiedPlan;
   }, [userId]);
 
   // Switch active student

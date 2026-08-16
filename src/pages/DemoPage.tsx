@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { PublicView, ActiveTab, UserProfile, Skill, Project, Achievement, CareerGoal, ReadinessScore } from '../types';
+import { PublicView, ActiveTab, UserProfile, Skill, Project, Achievement, CareerGoal, ReadinessScore, SubscriptionPlan } from '../types';
 import { StudentTwinContext, StudentTwinContextType } from '../context/StudentTwinContext';
 import { DashboardLayout } from '../components/layout/DashboardLayout';
 import { DashboardOverview } from './dashboard/DashboardOverview';
@@ -489,7 +489,7 @@ export const DemoPage: React.FC<DemoPageProps> = ({ setCurrentView }) => {
     },
     uploadDataToCloud: async () => ({ success: true, message: 'Demo data does not require cloud upload' }),
     plan: 'free',
-    upgradePlan: async () => {},
+    upgradePlan: async (newPlan: SubscriptionPlan) => newPlan,
     isOnboardingOpen: false,
     setIsOnboardingOpen: () => {},
   };

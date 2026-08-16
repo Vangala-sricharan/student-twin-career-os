@@ -2,8 +2,8 @@ import { createClient, SupabaseClient, User, Session, AuthChangeEvent } from '@s
 
 const rawUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim();
 const rawKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
-const supabaseUrl = rawUrl.replace(/\/+$/, '');
-const supabaseAnonKey = rawKey;
+export const supabaseUrl = rawUrl.replace(/\/+$/, '');
+export const supabaseAnonKey = rawKey;
 
 export const isSupabaseConfigured = Boolean(
   supabaseUrl &&

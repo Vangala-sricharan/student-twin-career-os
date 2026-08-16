@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { supabase, isSupabaseConfigured, fallbackAuth, AuthUser } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, supabaseUrl, fallbackAuth, AuthUser } from '../lib/supabase';
 import { AuthChangeEvent, Session } from '@supabase/supabase-js';
 
 interface AuthContextType {
@@ -26,12 +26,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let isMounted = true;
 
     async function initAuth() {
+      const runtimeUrl = isSupabaseConfigured ? supabaseUrl : 'local-fallback';
       try {
         if (isSupabaseConfigured && supabase) {
           const { data, error } = await supabase.auth.getSession();
+          console.log('[Supabase Auth Debug] initAuth getSession():', {
+            runtimeSupabaseUrl: runtimeUrl,
+            hasSession: Boolean(data?.session),
+            userId: data?.session?.user?.id || null,
+            error: error ? { message: error.message, status: error.status, code: (error as any).code } : null,
+          });
+
           if (error) {
-            console.error('Supabase getSession error:', error);
+            console.error('[Supabase Auth Error] getSession failed:', {
+              message: error.message,
+              status: error.status,
+              code: (error as any).code,
+              runtimeSupabaseUrl: runtimeUrl,
+            });
           }
+
           if (data?.session?.user && isMounted) {
             const sbUser = data.session.user;
             const authUser: AuthUser = {
@@ -41,20 +55,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             };
             setUser(authUser);
             setSession({ access_token: data.session.access_token });
-            fallbackAuth.setStoredSession({
-              user: authUser,
-              access_token: data.session.access_token,
-            });
-          } else if (isMounted) {
-            // Check fallback stored session if supabase returned no active session
-            const localSession = fallbackAuth.getStoredSession();
-            if (localSession) {
-              setUser(localSession.user);
-              setSession({ access_token: localSession.access_token });
-            }
           }
         } else {
-          // Check fallback stored session
+          // Only use local fallback when Supabase is NOT configured
           const localSession = fallbackAuth.getStoredSession();
           if (localSession && isMounted) {
             setUser(localSession.user);
@@ -62,7 +65,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         }
       } catch (err) {
-        console.error('Auth initialization error:', err);
+        console.error('[Auth Init Error]:', err);
       } finally {
         if (isMounted) {
           setLoading(false);
@@ -76,6 +79,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (isSupabaseConfigured && supabase) {
       const { data: authListener } = supabase.auth.onAuthStateChange(
         async (event: AuthChangeEvent, sbSession: Session | null) => {
+          console.log('[Supabase Auth Debug] onAuthStateChange event:', {
+            event,
+            runtimeSupabaseUrl: supabaseUrl,
+            userId: sbSession?.user?.id || null,
+            hasSession: Boolean(sbSession),
+            hasAccessToken: Boolean(sbSession?.access_token),
+          });
+
           if (sbSession?.user) {
             const sbUser = sbSession.user;
             const authUser: AuthUser = {
@@ -85,14 +96,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             };
             setUser(authUser);
             setSession({ access_token: sbSession.access_token });
-            fallbackAuth.setStoredSession({
-              user: authUser,
-              access_token: sbSession.access_token,
-            });
           } else if (event === 'SIGNED_OUT') {
             setUser(null);
             setSession(null);
-            fallbackAuth.setStoredSession(null);
           }
           if (isMounted) {
             setLoading(false);
@@ -114,8 +120,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signUp = useCallback(async (email: string, password: string, fullName: string): Promise<{ error: Error | null }> => {
     const cleanEmail = email.trim().toLowerCase();
     const cleanName = fullName.trim();
+    const runtimeUrl = isSupabaseConfigured ? supabaseUrl : 'local-fallback';
+
     try {
       if (isSupabaseConfigured && supabase) {
+        console.log('[Supabase Auth Debug] Executing supabase.auth.signUp:', {
+          email: cleanEmail,
+          runtimeSupabaseUrl: runtimeUrl,
+        });
+
         const { data, error } = await supabase.auth.signUp({
           email: cleanEmail,
           password,
@@ -125,17 +138,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             },
           },
         });
+
         if (error) {
-          console.error('[Supabase Auth] signUp error:', error);
+          console.error('[Supabase Auth Error] signUp failed:', {
+            message: error.message,
+            status: error.status,
+            code: (error as any).code,
+            name: error.name,
+            runtimeSupabaseUrl: runtimeUrl,
+          });
           return { error: new Error(error.message) };
         }
 
-        // Supabase returns empty identities when an email is already registered
+        // Supabase returns empty identities when an account with that email already exists
         if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
-          return { error: new Error('An account with this email already exists. Please sign in instead.') };
+          console.warn('[Supabase Auth Warning] User already registered with this email:', cleanEmail);
+          return { error: new Error('An account with this email already exists. Please log in using your password.') };
         }
 
         if (data.user) {
+          console.log('[Supabase Auth Debug] signUp created user:', {
+            userId: data.user.id,
+            email: data.user.email,
+            hasSession: Boolean(data.session),
+            emailConfirmedAt: (data.user as any).email_confirmed_at,
+            runtimeSupabaseUrl: runtimeUrl,
+          });
+
           const authUser: AuthUser = {
             id: data.user.id,
             email: data.user.email || cleanEmail,
@@ -143,23 +172,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           };
           setUser(authUser);
 
-          const token = data.session?.access_token || 'session_' + data.user.id;
-          setSession({ access_token: token });
-
-          fallbackAuth.saveUser({
-            id: data.user.id,
-            email: cleanEmail,
-            passwordHash: btoa(password),
-            fullName: cleanName || 'Student',
-            createdAt: new Date().toISOString(),
-          });
-          fallbackAuth.setStoredSession({
-            user: authUser,
-            access_token: token,
-          });
+          if (data.session) {
+            setSession({ access_token: data.session.access_token });
+          } else {
+            console.warn('[Supabase Auth Warning] signUp did not return an active session. If email confirmation is enabled in your Supabase project settings, the user must confirm email before logging in again with signInWithPassword.');
+          }
         }
         return { error: null };
       } else {
+        // Fallback ONLY when Supabase keys are not configured
         const res = await fallbackAuth.signUp(cleanEmail, password, cleanName);
         if (res.error) return { error: res.error };
         if (res.user) {
@@ -169,33 +190,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { error: null };
       }
     } catch (e) {
-      console.error('[Auth] Unexpected signUp error:', e);
+      console.error('[Auth Exception] signUp caught error:', e);
       return { error: e instanceof Error ? e : new Error(String(e)) };
     }
   }, []);
 
   const signIn = useCallback(async (email: string, password: string): Promise<{ error: Error | null }> => {
     const cleanEmail = email.trim().toLowerCase();
+    const runtimeUrl = isSupabaseConfigured ? supabaseUrl : 'local-fallback';
+
     try {
       if (isSupabaseConfigured && supabase) {
+        console.log('[Supabase Auth Debug] Executing supabase.auth.signInWithPassword:', {
+          email: cleanEmail,
+          runtimeSupabaseUrl: runtimeUrl,
+        });
+
         const { data, error } = await supabase.auth.signInWithPassword({
           email: cleanEmail,
           password,
         });
 
         if (error) {
-          console.warn('[Supabase Auth] signInWithPassword notice:', error.message);
-          // If Supabase returned an error (e.g. unconfirmed email in dev environment), check fallback store
-          const fallbackRes = await fallbackAuth.signInWithPassword(cleanEmail, password);
-          if (!fallbackRes.error && fallbackRes.session) {
-            setUser(fallbackRes.session.user);
-            setSession({ access_token: fallbackRes.session.access_token });
-            return { error: null };
-          }
+          console.error('[Supabase Auth Error] signInWithPassword failed:', {
+            message: error.message,
+            status: error.status,
+            code: (error as any).code,
+            name: error.name,
+            runtimeSupabaseUrl: runtimeUrl,
+          });
           return { error: new Error(error.message) };
         }
 
         if (data.user && data.session) {
+          console.log('[Supabase Auth Debug] signInWithPassword SUCCESS:', {
+            authenticatedUserId: data.user.id,
+            email: data.user.email,
+            hasSession: Boolean(data.session),
+            runtimeSupabaseUrl: runtimeUrl,
+          });
+
           const authUser: AuthUser = {
             id: data.user.id,
             email: data.user.email || cleanEmail,
@@ -203,21 +237,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           };
           setUser(authUser);
           setSession({ access_token: data.session.access_token });
-
-          fallbackAuth.saveUser({
-            id: data.user.id,
-            email: cleanEmail,
-            passwordHash: btoa(password),
-            fullName: (data.user.user_metadata?.full_name as string) || 'Student',
-            createdAt: data.user.created_at || new Date().toISOString(),
-          });
-          fallbackAuth.setStoredSession({
-            user: authUser,
-            access_token: data.session.access_token,
-          });
         }
         return { error: null };
       } else {
+        // Fallback ONLY when Supabase keys are not configured
         const res = await fallbackAuth.signInWithPassword(cleanEmail, password);
         if (res.error) return { error: res.error };
         if (res.session) {
@@ -227,14 +250,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { error: null };
       }
     } catch (e) {
-      console.error('[Auth] Unexpected signIn error:', e);
+      console.error('[Auth Exception] signIn caught error:', e);
       return { error: e instanceof Error ? e : new Error(String(e)) };
     }
   }, []);
 
   const signInWithGoogle = useCallback(async (): Promise<{ error: Error | null }> => {
+    const runtimeUrl = isSupabaseConfigured ? supabaseUrl : 'local-fallback';
     try {
       if (isSupabaseConfigured && supabase) {
+        console.log('[Supabase Auth Debug] Executing signInWithOAuth (Google):', {
+          runtimeSupabaseUrl: runtimeUrl,
+        });
         const { error } = await supabase.auth.signInWithOAuth({
           provider: 'google',
           options: {
@@ -242,7 +269,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           },
         });
         if (error) {
-          console.error('[Supabase Auth] Google OAuth error:', error);
+          console.error('[Supabase Auth Error] Google OAuth failed:', {
+            message: error.message,
+            status: error.status,
+            code: (error as any).code,
+            runtimeSupabaseUrl: runtimeUrl,
+          });
           return { error: new Error(error.message) };
         }
         return { error: null };
@@ -257,24 +289,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { error: null };
       }
     } catch (e) {
-      console.error('[Auth] Unexpected Google OAuth error:', e);
+      console.error('[Auth Exception] Google OAuth error:', e);
       return { error: e instanceof Error ? e : new Error(String(e)) };
     }
   }, []);
 
   const signOut = useCallback(async (): Promise<void> => {
+    const runtimeUrl = isSupabaseConfigured ? supabaseUrl : 'local-fallback';
     try {
       if (isSupabaseConfigured && supabase) {
-        try {
-          await supabase.auth.signOut({ scope: 'local' });
-        } catch (sbErr) {
-          console.warn('[Supabase Auth] local signOut attempt:', sbErr);
-          await supabase.auth.signOut();
+        console.log('[Supabase Auth Debug] Executing supabase.auth.signOut:', {
+          runtimeSupabaseUrl: runtimeUrl,
+        });
+        const { error } = await supabase.auth.signOut();
+        if (error) {
+          console.error('[Supabase Auth Error] signOut failed:', {
+            message: error.message,
+            status: error.status,
+            code: (error as any).code,
+            runtimeSupabaseUrl: runtimeUrl,
+          });
         }
+      } else {
+        await fallbackAuth.signOut();
       }
-      await fallbackAuth.signOut();
     } catch (err) {
-      console.error('[Auth] SignOut error:', err);
+      console.error('[Auth Exception] SignOut error:', err);
     } finally {
       setUser(null);
       setSession(null);
