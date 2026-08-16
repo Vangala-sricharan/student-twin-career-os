@@ -1,0 +1,6 @@
+{
+  "name": "Student Digital Twin",
+  "description": "AI-Powered Engineering Career Readiness OS for students to model readiness, skills, projects, achievements, and career goals.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
