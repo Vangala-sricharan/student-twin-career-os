@@ -134,7 +134,6 @@ export const UpgradePaymentModal: React.FC<UpgradePaymentModalProps> = ({
   const handleSimulatedPaymentSuccess = async () => {
     try {
       await upgradePlan(planDetails.id, planDetails.billingPeriod, planDetails.amountNumeric);
-      await uploadDataToCloud();
       setPaymentState('success');
       if (onSuccess) {
         onSuccess(planDetails.id);

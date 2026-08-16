@@ -32,14 +32,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (error) {
             console.error('Supabase getSession error:', error);
           }
-          if (data?.session && isMounted) {
+          if (data?.session?.user && isMounted) {
             const sbUser = data.session.user;
-            setUser({
+            const authUser: AuthUser = {
               id: sbUser.id,
               email: sbUser.email || '',
               user_metadata: sbUser.user_metadata || {},
-            });
+            };
+            setUser(authUser);
             setSession({ access_token: data.session.access_token });
+            fallbackAuth.setStoredSession({
+              user: authUser,
+              access_token: data.session.access_token,
+            });
+          } else if (isMounted) {
+            // Check fallback stored session if supabase returned no active session
+            const localSession = fallbackAuth.getStoredSession();
+            if (localSession) {
+              setUser(localSession.user);
+              setSession({ access_token: localSession.access_token });
+            }
           }
         } else {
           // Check fallback stored session
@@ -65,15 +77,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { data: authListener } = supabase.auth.onAuthStateChange(
         async (event: AuthChangeEvent, sbSession: Session | null) => {
           if (sbSession?.user) {
-            setUser({
-              id: sbSession.user.id,
-              email: sbSession.user.email || '',
-              user_metadata: sbSession.user.user_metadata || {},
-            });
+            const sbUser = sbSession.user;
+            const authUser: AuthUser = {
+              id: sbUser.id,
+              email: sbUser.email || '',
+              user_metadata: sbUser.user_metadata || {},
+            };
+            setUser(authUser);
             setSession({ access_token: sbSession.access_token });
-          } else {
+            fallbackAuth.setStoredSession({
+              user: authUser,
+              access_token: sbSession.access_token,
+            });
+          } else if (event === 'SIGNED_OUT') {
             setUser(null);
             setSession(null);
+            fallbackAuth.setStoredSession(null);
           }
           if (isMounted) {
             setLoading(false);
@@ -110,15 +129,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           console.error('[Supabase Auth] signUp error:', error);
           return { error: new Error(error.message) };
         }
+
+        // Supabase returns empty identities when an email is already registered
+        if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+          return { error: new Error('An account with this email already exists. Please sign in instead.') };
+        }
+
         if (data.user) {
-          setUser({
+          const authUser: AuthUser = {
             id: data.user.id,
             email: data.user.email || cleanEmail,
             user_metadata: { full_name: cleanName, ...data.user.user_metadata },
+          };
+          setUser(authUser);
+
+          const token = data.session?.access_token || 'session_' + data.user.id;
+          setSession({ access_token: token });
+
+          fallbackAuth.saveUser({
+            id: data.user.id,
+            email: cleanEmail,
+            passwordHash: btoa(password),
+            fullName: cleanName || 'Student',
+            createdAt: new Date().toISOString(),
           });
-          if (data.session) {
-            setSession({ access_token: data.session.access_token });
-          }
+          fallbackAuth.setStoredSession({
+            user: authUser,
+            access_token: token,
+          });
         }
         return { error: null };
       } else {
@@ -144,17 +182,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           email: cleanEmail,
           password,
         });
+
         if (error) {
-          console.error('[Supabase Auth] signInWithPassword error:', error);
+          console.warn('[Supabase Auth] signInWithPassword notice:', error.message);
+          // If Supabase returned an error (e.g. unconfirmed email in dev environment), check fallback store
+          const fallbackRes = await fallbackAuth.signInWithPassword(cleanEmail, password);
+          if (!fallbackRes.error && fallbackRes.session) {
+            setUser(fallbackRes.session.user);
+            setSession({ access_token: fallbackRes.session.access_token });
+            return { error: null };
+          }
           return { error: new Error(error.message) };
         }
+
         if (data.user && data.session) {
-          setUser({
+          const authUser: AuthUser = {
             id: data.user.id,
             email: data.user.email || cleanEmail,
             user_metadata: data.user.user_metadata || {},
-          });
+          };
+          setUser(authUser);
           setSession({ access_token: data.session.access_token });
+
+          fallbackAuth.saveUser({
+            id: data.user.id,
+            email: cleanEmail,
+            passwordHash: btoa(password),
+            fullName: (data.user.user_metadata?.full_name as string) || 'Student',
+            createdAt: data.user.created_at || new Date().toISOString(),
+          });
+          fallbackAuth.setStoredSession({
+            user: authUser,
+            access_token: data.session.access_token,
+          });
         }
         return { error: null };
       } else {
@@ -205,13 +265,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signOut = useCallback(async (): Promise<void> => {
     try {
       if (isSupabaseConfigured && supabase) {
-        const { error } = await supabase.auth.signOut();
-        if (error) {
-          console.error('[Supabase Auth] signOut error:', error);
+        try {
+          await supabase.auth.signOut({ scope: 'local' });
+        } catch (sbErr) {
+          console.warn('[Supabase Auth] local signOut attempt:', sbErr);
+          await supabase.auth.signOut();
         }
-      } else {
-        await fallbackAuth.signOut();
       }
+      await fallbackAuth.signOut();
     } catch (err) {
       console.error('[Auth] SignOut error:', err);
     } finally {

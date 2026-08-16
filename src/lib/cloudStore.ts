@@ -57,15 +57,28 @@ export const cloudStore = {
     }
 
     const timestamp = new Date().toISOString();
+
+    // Ensure we do not overwrite an upgraded plan with a stale plan from payload closure
+    let authoritativePlan = payload.plan || 'free';
+    try {
+      const storedPlan = localStorage.getItem(`${USER_PLAN_PREFIX}${userId}`);
+      if (storedPlan && ['free', 'pro_monthly', 'pro_annual', 'institution'].includes(storedPlan)) {
+        if (storedPlan !== 'free') {
+          authoritativePlan = storedPlan as SubscriptionPlan;
+        }
+      }
+    } catch {}
+
     const fullPayload: UserCloudPayload = {
       ...payload,
+      plan: authoritativePlan,
       lastUploadedAt: timestamp,
     };
 
     try {
       // 1. Save to user-isolated cloud storage key
       localStorage.setItem(`${CLOUD_STORAGE_PREFIX}${userId}`, JSON.stringify(fullPayload));
-      localStorage.setItem(`${USER_PLAN_PREFIX}${userId}`, fullPayload.plan || 'free');
+      localStorage.setItem(`${USER_PLAN_PREFIX}${userId}`, authoritativePlan);
       localStorage.setItem(`${ONBOARDING_PREFIX}${userId}`, fullPayload.hasCompletedOnboarding ? 'true' : 'false');
 
       // 2. If Supabase is active, persist into Supabase user metadata as well
@@ -74,7 +87,7 @@ export const cloudStore = {
           const { error } = await supabase.auth.updateUser({
             data: {
               student_twin_backup: fullPayload,
-              student_twin_plan: fullPayload.plan,
+              student_twin_plan: authoritativePlan,
             },
           });
           if (error) {
