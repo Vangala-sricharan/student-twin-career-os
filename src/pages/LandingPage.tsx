@@ -474,7 +474,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ setCurrentView }) => {
                 Career Pro Twin
               </span>
               <div className="mt-4 flex items-baseline gap-1">
-                <span className="text-4xl font-extrabold text-slate-900 dark:text-white">₹499</span>
+                <span className="text-4xl font-extrabold text-slate-900 dark:text-white">₹299</span>
                 <span className="text-sm font-medium text-slate-500 dark:text-slate-400">/ month (or ₹1,499/yr)</span>
               </div>
               <p className="mt-3 text-xs text-slate-600 dark:text-slate-400">

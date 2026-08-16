@@ -95,37 +95,87 @@ export const cloudStore = {
   },
 
   // Get user-specific plan (Defaults to 'free' for all new accounts)
-  getUserPlan(userId: string): SubscriptionPlan {
+  async getUserPlan(userId: string): Promise<SubscriptionPlan> {
     if (!userId || userId === 'guest_user') return 'free';
+
+    // 1. Check Supabase user metadata / cloud if configured
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (!error && user && user.id === userId) {
+          const remotePlan = (user.user_metadata?.student_twin_plan || user.user_metadata?.student_twin_subscription?.plan) as string | undefined;
+          if (remotePlan && ['free', 'pro_monthly', 'pro_annual', 'institution'].includes(remotePlan)) {
+            // Keep local storage cache in sync
+            localStorage.setItem(`${USER_PLAN_PREFIX}${userId}`, remotePlan);
+            return remotePlan as SubscriptionPlan;
+          }
+        }
+      } catch (err) {
+        console.warn('Supabase remote plan fetch notice:', err);
+      }
+    }
+
+    // 2. Check user-isolated local cache
     try {
       const stored = localStorage.getItem(`${USER_PLAN_PREFIX}${userId}`);
       if (stored && ['free', 'pro_monthly', 'pro_annual', 'institution'].includes(stored)) {
         return stored as SubscriptionPlan;
       }
     } catch {}
+
     return 'free';
   },
 
   // Set user-specific plan
-  async setUserPlan(userId: string, plan: SubscriptionPlan): Promise<void> {
+  async setUserPlan(
+    userId: string,
+    plan: SubscriptionPlan,
+    billingPeriod: 'monthly' | 'annual' = 'annual',
+    price: number = 1499
+  ): Promise<void> {
     if (!userId || userId === 'guest_user') return;
     try {
+      // 1. Update local cache
       localStorage.setItem(`${USER_PLAN_PREFIX}${userId}`, plan);
       
-      // Also update in cloud payload if it exists
+      // 2. Also update in cloud payload if it exists
       const existing = await this.getUserData(userId);
       if (existing) {
         existing.plan = plan;
         localStorage.setItem(`${CLOUD_STORAGE_PREFIX}${userId}`, JSON.stringify(existing));
       }
 
+      // 3. Persist authoritative subscription state to Supabase
       if (isSupabaseConfigured && supabase) {
+        const subscriptionRecord = {
+          user_id: userId,
+          plan,
+          billing_period: billingPeriod,
+          price,
+          subscription_status: 'active',
+          payment_reference: 'DEMO_UPI_VERIFIED_' + Date.now(),
+          updated_at: new Date().toISOString(),
+        };
+
+        // Update user metadata in Supabase Auth
         await supabase.auth.updateUser({
-          data: { student_twin_plan: plan },
+          data: {
+            student_twin_plan: plan,
+            student_twin_subscription: subscriptionRecord,
+          },
         });
+
+        // Safely update subscriptions / profiles table if they exist
+        try {
+          await supabase.from('subscriptions').upsert(subscriptionRecord);
+        } catch {}
+
+        try {
+          await supabase.from('profiles').update({ plan }).eq('id', userId);
+        } catch {}
       }
     } catch (e) {
-      console.error('Failed to set user plan', e);
+      console.error('Failed to set user plan in cloudStore', e);
     }
   },
 

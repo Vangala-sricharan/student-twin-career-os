@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useStudentTwin } from '../../context/StudentTwinContext';
+import { SubscriptionPlan } from '../../types';
 import QRCode from 'qrcode';
 import {
   QrCode,
@@ -22,16 +23,20 @@ import {
 interface UpgradePaymentModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess?: () => void;
+  onSuccess?: (upgradedPlan: SubscriptionPlan) => void;
+  targetPlan?: SubscriptionPlan;
+  billingPeriod?: 'monthly' | 'annual';
 }
 
 export const UpgradePaymentModal: React.FC<UpgradePaymentModalProps> = ({
   isOpen,
   onClose,
   onSuccess,
+  targetPlan = 'pro_annual',
+  billingPeriod = 'annual',
 }) => {
   const { user } = useAuth();
-  const { plan, upgradePlan, uploadDataToCloud } = useStudentTwin();
+  const { upgradePlan, uploadDataToCloud } = useStudentTwin();
 
   const [paymentState, setPaymentState] = useState<'scan' | 'verifying' | 'success'>('scan');
   const [countdown, setCountdown] = useState<number>(11);
@@ -39,14 +44,34 @@ export const UpgradePaymentModal: React.FC<UpgradePaymentModalProps> = ({
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
 
   const upiId = '8520981574@ybl';
-  const planName = 'Pro Career Twin (Annual)';
-  const amountNumeric = 1499;
-  const amountINR = '₹1,499';
 
-  // Standard valid UPI deep link URI
-  const upiDeepLink = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent('Student Digital Twin')}&am=${amountNumeric}&cu=INR`;
+  const planDetails = useMemo(() => {
+    if (targetPlan === 'pro_monthly' || billingPeriod === 'monthly') {
+      return {
+        id: 'pro_monthly' as SubscriptionPlan,
+        name: 'Pro Career Twin (Monthly)',
+        badge: 'Monthly Plan',
+        amountNumeric: 299,
+        amountINR: '₹299',
+        periodText: '/ month',
+        billingPeriod: 'monthly' as const,
+      };
+    }
+    return {
+      id: 'pro_annual' as SubscriptionPlan,
+      name: 'Pro Career Twin (Annual)',
+      badge: 'Annual Plan',
+      amountNumeric: 1499,
+      amountINR: '₹1,499',
+      periodText: '/ year',
+      billingPeriod: 'annual' as const,
+    };
+  }, [targetPlan, billingPeriod]);
 
-  // Generate real scannable QR code whenever modal opens
+  // Standard valid UPI deep link URI with dynamic amount
+  const upiDeepLink = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent('Student Digital Twin')}&am=${planDetails.amountNumeric}&cu=INR`;
+
+  // Generate real scannable QR code whenever modal opens or plan details change
   useEffect(() => {
     if (isOpen) {
       QRCode.toDataURL(
@@ -73,18 +98,20 @@ export const UpgradePaymentModal: React.FC<UpgradePaymentModalProps> = ({
 
   // 11-second timer effect when state transitions to 'verifying'
   useEffect(() => {
-    let timer: any;
+    let timer: NodeJS.Timeout | undefined;
     if (paymentState === 'verifying') {
       if (countdown > 0) {
         timer = setTimeout(() => {
           setCountdown((prev) => prev - 1);
         }, 1000);
       } else {
-        // Countdown reached 0 -> Complete simulated upgrade
+        // Countdown reached 0 -> Complete simulated upgrade and persistence
         handleSimulatedPaymentSuccess();
       }
     }
-    return () => clearTimeout(timer);
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
   }, [paymentState, countdown]);
 
   if (!isOpen) return null;
@@ -106,11 +133,11 @@ export const UpgradePaymentModal: React.FC<UpgradePaymentModalProps> = ({
 
   const handleSimulatedPaymentSuccess = async () => {
     try {
-      await upgradePlan('pro_annual');
+      await upgradePlan(planDetails.id, planDetails.billingPeriod, planDetails.amountNumeric);
       await uploadDataToCloud();
       setPaymentState('success');
       if (onSuccess) {
-        onSuccess();
+        onSuccess(planDetails.id);
       }
     } catch (e) {
       console.error('Plan upgrade error', e);
@@ -152,11 +179,11 @@ export const UpgradePaymentModal: React.FC<UpgradePaymentModalProps> = ({
 
           <div className="flex items-center gap-2 mb-1">
             <span className="px-2.5 py-0.5 rounded-full bg-white/20 text-[10px] font-extrabold uppercase tracking-wider">
-              Annual Plan
+              {planDetails.badge}
             </span>
           </div>
           <h3 className="text-xl font-black tracking-tight">
-            Annual Plan — {amountINR} / year
+            {planDetails.name} — {planDetails.amountINR} {planDetails.periodText}
           </h3>
           <p className="text-xs text-blue-100 mt-0.5">
             Unlock unlimited AI tools, multi-student profiles, and deep career insights.
@@ -197,10 +224,10 @@ export const UpgradePaymentModal: React.FC<UpgradePaymentModalProps> = ({
 
                 <div className="space-y-1">
                   <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                    Annual Plan Subscription
+                    {planDetails.name}
                   </div>
                   <div className="text-2xl font-black text-slate-900 dark:text-white">
-                    {amountINR} <span className="text-xs font-normal text-slate-400">/ year</span>
+                    {planDetails.amountINR} <span className="text-xs font-normal text-slate-400">{planDetails.periodText}</span>
                   </div>
                 </div>
 
@@ -237,7 +264,7 @@ export const UpgradePaymentModal: React.FC<UpgradePaymentModalProps> = ({
                   className="w-full max-w-xs py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-all shadow-xs"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
-                  <span>Pay with UPI ({amountINR})</span>
+                  <span>Pay with UPI ({planDetails.amountINR})</span>
                 </a>
               </div>
 
@@ -279,7 +306,7 @@ export const UpgradePaymentModal: React.FC<UpgradePaymentModalProps> = ({
                   Verifying Simulated Payment...
                 </h4>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Simulating payment provider confirmation in {countdown} seconds. Please do not close this window.
+                  Simulating payment provider confirmation of {planDetails.amountINR} in {countdown} seconds. Please do not close this window.
                 </p>
               </div>
 
@@ -311,12 +338,12 @@ export const UpgradePaymentModal: React.FC<UpgradePaymentModalProps> = ({
                   Simulated Payment Successful!
                 </h4>
                 <p className="text-xs text-slate-600 dark:text-slate-400 max-w-sm">
-                  Your account has been upgraded to <strong>PRO ANNUAL</strong> (₹1,499 / year). This plan status is securely saved to your account and preserved across sessions.
+                  Your account has been upgraded to <strong>{planDetails.id === 'pro_monthly' ? 'PRO MONTHLY' : 'PRO ANNUAL'}</strong> ({planDetails.amountINR} {planDetails.periodText}). This plan status is securely saved to your account and preserved across sessions.
                 </p>
               </div>
 
               <div className="w-full p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs font-semibold text-emerald-800 dark:text-emerald-300 space-y-1">
-                <div>Plan: Pro Career Twin (Annual)</div>
+                <div>Plan: {planDetails.name}</div>
                 <div>Account: {user?.email}</div>
                 <div>Status: Active (Persisted)</div>
               </div>

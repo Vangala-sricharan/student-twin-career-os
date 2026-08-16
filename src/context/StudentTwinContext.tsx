@@ -168,7 +168,7 @@ export interface StudentTwinContextType {
 
   // Subscription Plan
   plan: SubscriptionPlan;
-  upgradePlan: (newPlan: SubscriptionPlan) => Promise<void>;
+  upgradePlan: (newPlan: SubscriptionPlan, billingPeriod?: 'monthly' | 'annual', price?: number) => Promise<void>;
 
   // Onboarding
   isOnboardingOpen: boolean;
@@ -342,8 +342,8 @@ export const StudentTwinProvider: React.FC<{ children: React.ReactNode }> = ({ c
       const keys = getStudentKeys(userId, 'default');
 
       try {
-        // 1. Fetch user subscription plan (defaults to 'free' for new users)
-        const userPlan = cloudStore.getUserPlan(userId);
+        // 1. Fetch user subscription plan from authoritative cloud / cache (defaults to 'free' for new users)
+        const userPlan = await cloudStore.getUserPlan(userId);
         if (isMounted) setPlan(userPlan);
 
         // 2. Check cloud backup / storage first
@@ -492,9 +492,17 @@ export const StudentTwinProvider: React.FC<{ children: React.ReactNode }> = ({ c
   ]);
 
   // Upgrade Plan
-  const upgradePlan = useCallback(async (newPlan: SubscriptionPlan) => {
+  const upgradePlan = useCallback(async (
+    newPlan: SubscriptionPlan,
+    billingPeriod?: 'monthly' | 'annual',
+    price?: number
+  ) => {
     setPlan(newPlan);
-    await cloudStore.setUserPlan(userId, newPlan);
+    const resolvedPeriod = billingPeriod || (newPlan === 'pro_monthly' ? 'monthly' : 'annual');
+    const resolvedPrice = price || (newPlan === 'pro_monthly' ? 299 : newPlan === 'pro_annual' ? 1499 : 0);
+    await cloudStore.setUserPlan(userId, newPlan, resolvedPeriod, resolvedPrice);
+    const refreshedPlan = await cloudStore.getUserPlan(userId);
+    setPlan(refreshedPlan);
   }, [userId]);
 
   // Switch active student

@@ -79,7 +79,7 @@ export const Footer: React.FC<FooterProps> = ({ setCurrentView }) => {
                 Student Starter: <span className="font-semibold text-emerald-600 dark:text-emerald-400">₹0</span>
               </li>
               <li className="text-slate-700 dark:text-slate-300 font-medium">
-                Career Pro Twin: <span className="font-semibold text-blue-600 dark:text-blue-400">₹499/mo</span>
+                Career Pro Twin: <span className="font-semibold text-blue-600 dark:text-blue-400">₹299/mo (or ₹1,499/yr)</span>
               </li>
               <li className="text-slate-700 dark:text-slate-300 font-medium">
                 Campus Enterprise: <span className="font-semibold text-indigo-600 dark:text-indigo-400">₹14,999/yr</span>

@@ -912,8 +912,11 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
       <UpgradePaymentModal
         isOpen={upgradeModalOpen}
         onClose={() => setUpgradeModalOpen(false)}
-        onSuccess={() => {
-          setUploadToast({ type: 'success', text: 'Simulated payment verified! Upgraded to PRO ANNUAL.' });
+        targetPlan="pro_annual"
+        billingPeriod="annual"
+        onSuccess={(upgradedPlan) => {
+          const label = upgradedPlan === 'pro_monthly' ? 'PRO MONTHLY (₹299/mo)' : 'PRO ANNUAL (₹1,499/yr)';
+          setUploadToast({ type: 'success', text: `Simulated payment verified! Upgraded to ${label}.` });
           setTimeout(() => setUploadToast(null), 5000);
         }}
       />

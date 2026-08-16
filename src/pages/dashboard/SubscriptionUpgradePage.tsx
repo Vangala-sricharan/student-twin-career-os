@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useStudentTwin } from '../../context/StudentTwinContext';
+import { SubscriptionPlan } from '../../types';
 import {
   Check,
   Zap,
@@ -16,7 +17,7 @@ import {
 import { UpgradePaymentModal } from '../../components/subscription/UpgradePaymentModal';
 
 export const SubscriptionUpgradePage: React.FC = () => {
-  const { plan, uploadDataToCloud } = useStudentTwin();
+  const { plan } = useStudentTwin();
   const [selectedBilling, setSelectedBilling] = useState<'monthly' | 'yearly'>('yearly');
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [successToast, setSuccessToast] = useState<string | null>(null);
@@ -42,7 +43,7 @@ export const SubscriptionUpgradePage: React.FC = () => {
       id: 'pro_annual',
       name: 'Pro Career Twin',
       tagline: 'Full AI Career OS intelligence suite & unlimited multi-profile management',
-      priceINR: selectedBilling === 'yearly' ? '₹1,499' : '₹499',
+      priceINR: selectedBilling === 'yearly' ? '₹1,499' : '₹299',
       period: selectedBilling === 'yearly' ? 'per year (Save 75%)' : 'per month',
       features: [
         'Unlimited student digital twin profiles & switching',
@@ -54,7 +55,7 @@ export const SubscriptionUpgradePage: React.FC = () => {
         'Official Student Digital Twin branded PDF exports',
         'Priority AI model processing & fast cloud backups',
       ],
-      cta: selectedBilling === 'yearly' ? 'Upgrade to Annual' : 'Upgrade to Monthly',
+      cta: selectedBilling === 'yearly' ? 'Upgrade to Annual (₹1,499)' : 'Upgrade to Monthly (₹299)',
       isPopular: true,
     },
     {
@@ -83,6 +84,8 @@ export const SubscriptionUpgradePage: React.FC = () => {
     }
   };
 
+  const isCurrentPro = plan === 'pro_annual' || plan === 'pro_monthly';
+
   return (
     <div className="space-y-8 max-w-6xl mx-auto">
       {/* Header */}
@@ -102,17 +105,31 @@ export const SubscriptionUpgradePage: React.FC = () => {
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs font-bold">
           <span className="text-slate-500 dark:text-slate-400">Current Plan:</span>
           <span className="text-blue-600 dark:text-blue-400 uppercase font-black tracking-wider">
-            {plan === 'pro_annual' ? 'Pro Annual (₹1,499/yr)' : plan === 'pro_monthly' ? 'Pro Monthly (₹499/mo)' : plan === 'institution' ? 'Campus Enterprise' : 'Free Plan (₹0)'}
+            {plan === 'pro_annual'
+              ? 'Pro Annual (₹1,499/yr)'
+              : plan === 'pro_monthly'
+              ? 'Pro Monthly (₹299/mo)'
+              : plan === 'institution'
+              ? 'Campus Enterprise'
+              : 'Free Plan (₹0)'}
           </span>
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
         </div>
 
         {/* Billing Selector */}
         <div className="flex items-center justify-center gap-3 pt-2">
-          <span className={`text-xs font-bold ${selectedBilling === 'monthly' ? 'text-slate-900 dark:text-white' : 'text-slate-500'}`}>
-            Monthly Billing
-          </span>
           <button
+            type="button"
+            onClick={() => setSelectedBilling('monthly')}
+            className={`text-xs font-bold transition-colors cursor-pointer ${
+              selectedBilling === 'monthly' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            Monthly Billing (₹299/mo)
+          </button>
+          <button
+            id="billing-toggle-btn"
+            type="button"
             onClick={() => setSelectedBilling(selectedBilling === 'monthly' ? 'yearly' : 'monthly')}
             className={`w-12 h-6 flex items-center rounded-full p-1 transition-all cursor-pointer ${
               selectedBilling === 'yearly' ? 'bg-blue-600 justify-end' : 'bg-slate-300 dark:bg-slate-700 justify-start'
@@ -120,12 +137,18 @@ export const SubscriptionUpgradePage: React.FC = () => {
           >
             <div className="w-4 h-4 rounded-full bg-white shadow-xs" />
           </button>
-          <span className={`text-xs font-bold flex items-center gap-1.5 ${selectedBilling === 'yearly' ? 'text-slate-900 dark:text-white' : 'text-slate-500'}`}>
-            <span>Annual Billing</span>
+          <button
+            type="button"
+            onClick={() => setSelectedBilling('yearly')}
+            className={`text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
+              selectedBilling === 'yearly' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <span>Annual Billing (₹1,499/yr)</span>
             <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
               Save 75%
             </span>
-          </span>
+          </button>
         </div>
       </div>
 
@@ -139,9 +162,10 @@ export const SubscriptionUpgradePage: React.FC = () => {
       {/* Pricing Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {tiers.map((tier) => {
-          const isCurrent = (tier.id === 'free' && (plan === 'free' || !plan)) ||
-                            (tier.id === 'pro_annual' && (plan === 'pro_annual' || plan === 'pro_monthly')) ||
-                            (tier.id === 'institution' && plan === 'institution');
+          const isCurrent =
+            (tier.id === 'free' && (plan === 'free' || !plan)) ||
+            (tier.id === 'pro_annual' && isCurrentPro) ||
+            (tier.id === 'institution' && plan === 'institution');
 
           return (
             <div
@@ -218,7 +242,11 @@ export const SubscriptionUpgradePage: React.FC = () => {
                   ) : tier.id === 'pro_annual' ? (
                     <>
                       <QrCode className="w-4 h-4" />
-                      <span>{selectedBilling === 'yearly' ? 'Upgrade to Annual (₹1,499)' : 'Upgrade to Monthly (₹499)'}</span>
+                      <span>
+                        {selectedBilling === 'yearly'
+                          ? 'Upgrade to Annual (₹1,499)'
+                          : 'Upgrade to Monthly (₹299)'}
+                      </span>
                     </>
                   ) : (
                     <>
@@ -252,12 +280,15 @@ export const SubscriptionUpgradePage: React.FC = () => {
         </div>
       </div>
 
-      {/* Upgrade QR Payment Modal */}
+      {/* Upgrade QR Payment Modal with dynamic plan & billing period */}
       <UpgradePaymentModal
         isOpen={paymentModalOpen}
         onClose={() => setPaymentModalOpen(false)}
-        onSuccess={() => {
-          setSuccessToast('Your simulated UPI payment was verified! You are now on PRO ANNUAL.');
+        targetPlan={selectedBilling === 'yearly' ? 'pro_annual' : 'pro_monthly'}
+        billingPeriod={selectedBilling === 'yearly' ? 'annual' : 'monthly'}
+        onSuccess={(upgradedPlan) => {
+          const planLabel = upgradedPlan === 'pro_monthly' ? 'PRO MONTHLY (₹299/mo)' : 'PRO ANNUAL (₹1,499/yr)';
+          setSuccessToast(`Your simulated UPI payment was verified! You are now on ${planLabel}.`);
           setTimeout(() => setSuccessToast(null), 5000);
         }}
       />

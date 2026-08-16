@@ -64,7 +64,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (isSupabaseConfigured && supabase) {
       const { data: authListener } = supabase.auth.onAuthStateChange(
         async (event: AuthChangeEvent, sbSession: Session | null) => {
-          if (sbSession) {
+          if (sbSession?.user) {
             setUser({
               id: sbSession.user.id,
               email: sbSession.user.email || '',
@@ -75,13 +75,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setUser(null);
             setSession(null);
           }
-          setLoading(false);
+          if (isMounted) {
+            setLoading(false);
+          }
         }
       );
 
       return () => {
         isMounted = false;
-        authListener.subscription.unsubscribe();
+        authListener?.subscription?.unsubscribe();
       };
     }
 
@@ -91,23 +93,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const signUp = useCallback(async (email: string, password: string, fullName: string): Promise<{ error: Error | null }> => {
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanName = fullName.trim();
     try {
       if (isSupabaseConfigured && supabase) {
         const { data, error } = await supabase.auth.signUp({
-          email,
+          email: cleanEmail,
           password,
           options: {
             data: {
-              full_name: fullName.trim(),
+              full_name: cleanName,
             },
           },
         });
-        if (error) return { error: new Error(error.message) };
+        if (error) {
+          console.error('[Supabase Auth] signUp error:', error);
+          return { error: new Error(error.message) };
+        }
         if (data.user) {
           setUser({
             id: data.user.id,
-            email: data.user.email || email,
-            user_metadata: { full_name: fullName.trim(), ...data.user.user_metadata },
+            email: data.user.email || cleanEmail,
+            user_metadata: { full_name: cleanName, ...data.user.user_metadata },
           });
           if (data.session) {
             setSession({ access_token: data.session.access_token });
@@ -115,7 +122,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
         return { error: null };
       } else {
-        const res = await fallbackAuth.signUp(email, password, fullName);
+        const res = await fallbackAuth.signUp(cleanEmail, password, cleanName);
         if (res.error) return { error: res.error };
         if (res.user) {
           setUser(res.user);
@@ -124,29 +131,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { error: null };
       }
     } catch (e) {
+      console.error('[Auth] Unexpected signUp error:', e);
       return { error: e instanceof Error ? e : new Error(String(e)) };
     }
   }, []);
 
   const signIn = useCallback(async (email: string, password: string): Promise<{ error: Error | null }> => {
+    const cleanEmail = email.trim().toLowerCase();
     try {
       if (isSupabaseConfigured && supabase) {
         const { data, error } = await supabase.auth.signInWithPassword({
-          email,
+          email: cleanEmail,
           password,
         });
-        if (error) return { error: new Error(error.message) };
+        if (error) {
+          console.error('[Supabase Auth] signInWithPassword error:', error);
+          return { error: new Error(error.message) };
+        }
         if (data.user && data.session) {
           setUser({
             id: data.user.id,
-            email: data.user.email || email,
+            email: data.user.email || cleanEmail,
             user_metadata: data.user.user_metadata || {},
           });
           setSession({ access_token: data.session.access_token });
         }
         return { error: null };
       } else {
-        const res = await fallbackAuth.signInWithPassword(email, password);
+        const res = await fallbackAuth.signInWithPassword(cleanEmail, password);
         if (res.error) return { error: res.error };
         if (res.session) {
           setUser(res.session.user);
@@ -155,6 +167,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { error: null };
       }
     } catch (e) {
+      console.error('[Auth] Unexpected signIn error:', e);
       return { error: e instanceof Error ? e : new Error(String(e)) };
     }
   }, []);
@@ -168,7 +181,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             redirectTo: window.location.origin,
           },
         });
-        if (error) return { error: new Error(error.message) };
+        if (error) {
+          console.error('[Supabase Auth] Google OAuth error:', error);
+          return { error: new Error(error.message) };
+        }
         return { error: null };
       } else {
         const res = await fallbackAuth.signInWithOAuth('google');
@@ -181,6 +197,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { error: null };
       }
     } catch (e) {
+      console.error('[Auth] Unexpected Google OAuth error:', e);
       return { error: e instanceof Error ? e : new Error(String(e)) };
     }
   }, []);
@@ -188,12 +205,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signOut = useCallback(async (): Promise<void> => {
     try {
       if (isSupabaseConfigured && supabase) {
-        await supabase.auth.signOut();
+        const { error } = await supabase.auth.signOut();
+        if (error) {
+          console.error('[Supabase Auth] signOut error:', error);
+        }
       } else {
         await fallbackAuth.signOut();
       }
     } catch (err) {
-      console.error('SignOut error:', err);
+      console.error('[Auth] SignOut error:', err);
     } finally {
       setUser(null);
       setSession(null);
@@ -201,17 +221,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const resetPassword = useCallback(async (email: string): Promise<{ error: Error | null }> => {
+    const cleanEmail = email.trim().toLowerCase();
     try {
       if (isSupabaseConfigured && supabase) {
-        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
           redirectTo: `${window.location.origin}/reset-password`,
         });
-        if (error) return { error: new Error(error.message) };
+        if (error) {
+          console.error('[Supabase Auth] resetPassword error:', error);
+          return { error: new Error(error.message) };
+        }
         return { error: null };
       } else {
-        return await fallbackAuth.resetPasswordForEmail(email);
+        return await fallbackAuth.resetPasswordForEmail(cleanEmail);
       }
     } catch (e) {
+      console.error('[Auth] Unexpected resetPassword error:', e);
       return { error: e instanceof Error ? e : new Error(String(e)) };
     }
   }, []);
