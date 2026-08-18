@@ -1,4 +1,14 @@
-import { UserProfile, Skill, Project, Achievement, CareerGoal, SubscriptionPlan } from '../types';
+import {
+  UserProfile,
+  Skill,
+  Project,
+  Achievement,
+  CareerGoal,
+  SubscriptionPlan,
+  GitHubReadinessAnalysis,
+  LinkedInReadinessAnalysis,
+  ProjectAnalysisRecord,
+} from '../types';
 import { supabase, isSupabaseConfigured } from './supabase';
 
 export interface UserCloudPayload {
@@ -19,6 +29,9 @@ export interface UserCloudPayload {
 const CLOUD_STORAGE_PREFIX = 'sdt_cloud_backup_v2_';
 const USER_PLAN_PREFIX = 'sdt_user_plan_v2_';
 const ONBOARDING_PREFIX = 'sdt_onboarding_done_v2_';
+const GITHUB_ANALYSIS_PREFIX = 'sdt_github_analysis_v2_';
+const LINKEDIN_ANALYSIS_PREFIX = 'sdt_linkedin_analysis_v2_';
+const PROJECT_ANALYSIS_PREFIX = 'sdt_proj_analysis_v2_';
 
 export const cloudStore = {
   // Get cloud backup for a specific authenticated user
@@ -121,6 +134,11 @@ export const cloudStore = {
             // Keep local storage cache in sync
             localStorage.setItem(`${USER_PLAN_PREFIX}${userId}`, remotePlan);
             return remotePlan as SubscriptionPlan;
+          } else if (remotePlan === 'pro') {
+            const billingCycle = user.user_metadata?.student_twin_subscription?.billing_cycle || user.user_metadata?.student_twin_subscription?.billing_period;
+            const resolved: SubscriptionPlan = billingCycle === 'monthly' ? 'pro_monthly' : 'pro_annual';
+            localStorage.setItem(`${USER_PLAN_PREFIX}${userId}`, resolved);
+            return resolved;
           }
         }
       } catch (err) {
@@ -152,19 +170,33 @@ export const cloudStore = {
       throw new Error(err);
     }
 
+    const now = new Date();
+    const upgradedAt = now.toISOString();
+    const expiresDate = new Date(now);
+    if (billingPeriod === 'monthly') {
+      expiresDate.setMonth(expiresDate.getMonth() + 1);
+    } else {
+      expiresDate.setFullYear(expiresDate.getFullYear() + 1);
+    }
+    const expiresAt = expiresDate.toISOString();
+
+    const subscriptionRecord = {
+      user_id: userId,
+      plan,
+      billing_cycle: billingPeriod,
+      billing_period: billingPeriod,
+      price,
+      payment_status: 'completed',
+      subscription_status: 'active',
+      upgraded_at: upgradedAt,
+      expires_at: expiresAt,
+      payment_reference: 'SIMULATED_UPI_VERIFIED_' + Date.now(),
+      updated_at: upgradedAt,
+    };
+
     try {
       // 1. Persist authoritative subscription state to Supabase
       if (isSupabaseConfigured && supabase) {
-        const subscriptionRecord = {
-          user_id: userId,
-          plan,
-          billing_period: billingPeriod,
-          price,
-          subscription_status: 'active',
-          payment_reference: 'DEMO_UPI_VERIFIED_' + Date.now(),
-          updated_at: new Date().toISOString(),
-        };
-
         // Existing backup payload if any
         const existing = await this.getUserData(userId);
 
@@ -173,7 +205,7 @@ export const cloudStore = {
           data: {
             student_twin_plan: plan,
             student_twin_subscription: subscriptionRecord,
-            ...(existing ? { student_twin_backup: existing } : {}),
+            ...(existing ? { student_twin_backup: { ...existing, plan } } : {}),
           },
         });
 
@@ -187,16 +219,28 @@ export const cloudStore = {
           throw new Error(`Supabase Auth Update Failed: ${authUpdateError.message}`);
         }
 
+        // Also attempt table-level updates if subscriptions or profiles tables exist
+        try {
+          await supabase.from('subscriptions').upsert(subscriptionRecord);
+        } catch (tableErr) {
+          // Table may not exist or RLS policy, metadata is authoritative
+        }
+        try {
+          await supabase.from('profiles').update({ plan }).eq('id', userId);
+        } catch (tableErr) {
+          // Table may not exist or RLS policy
+        }
+
         // 2. Read back user metadata from Supabase to verify write
         const { data: verifyData, error: verifyError } = await supabase.auth.getUser();
-        if (verifyError) {
+        if (verifyError || !verifyData?.user) {
           console.error('[Supabase Auth getUser Verification Error]:', {
-            message: verifyError.message,
-            status: verifyError.status,
-            code: (verifyError as any).code,
+            message: verifyError?.message,
+            status: verifyError?.status,
+            code: (verifyError as any)?.code,
             userId,
           });
-          throw new Error(`Failed to verify subscription with Supabase: ${verifyError.message}`);
+          throw new Error(`Failed to verify subscription with Supabase: ${verifyError?.message || 'User not found'}`);
         }
 
         const verifiedPlan = verifyData?.user?.user_metadata?.student_twin_plan;
@@ -254,4 +298,187 @@ export const cloudStore = {
       console.error('Failed to set onboarding state', e);
     }
   },
+
+  // Save Latest GitHub Readiness Analysis
+  async saveLatestGithubAnalysis(
+    userId: string,
+    analysis: GitHubReadinessAnalysis
+  ): Promise<void> {
+    if (!userId || userId === 'guest_user') return;
+
+    try {
+      // 1. Save to local storage cache for the user
+      localStorage.setItem(`${GITHUB_ANALYSIS_PREFIX}${userId}`, JSON.stringify(analysis));
+
+      // 2. Persist to Supabase Auth metadata if configured
+      if (isSupabaseConfigured && supabase) {
+        await supabase.auth.updateUser({
+          data: {
+            student_twin_github_analysis: analysis,
+          },
+        });
+      }
+    } catch (err) {
+      console.warn('Failed to persist GitHub analysis to Supabase:', err);
+    }
+  },
+
+  // Get Latest GitHub Readiness Analysis
+  async getLatestGithubAnalysis(
+    userId: string
+  ): Promise<GitHubReadinessAnalysis | null> {
+    if (!userId || userId === 'guest_user') return null;
+
+    // 1. Check Supabase metadata
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (!error && user?.id === userId && user.user_metadata?.student_twin_github_analysis) {
+          const remote = user.user_metadata.student_twin_github_analysis as GitHubReadinessAnalysis;
+          // Keep local cache in sync
+          localStorage.setItem(`${GITHUB_ANALYSIS_PREFIX}${userId}`, JSON.stringify(remote));
+          return remote;
+        }
+      } catch (err) {
+        console.warn('Supabase remote GitHub analysis fetch note:', err);
+      }
+    }
+
+    // 2. Check local storage cache
+    try {
+      const raw = localStorage.getItem(`${GITHUB_ANALYSIS_PREFIX}${userId}`);
+      if (raw) {
+        return JSON.parse(raw) as GitHubReadinessAnalysis;
+      }
+    } catch (e) {
+      console.error('Failed to parse local GitHub analysis:', e);
+    }
+
+    return null;
+  },
+
+  // Save Latest LinkedIn Readiness Analysis
+  async saveLatestLinkedinAnalysis(
+    userId: string,
+    analysis: LinkedInReadinessAnalysis
+  ): Promise<void> {
+    if (!userId || userId === 'guest_user') return;
+
+    try {
+      // 1. Save to local storage cache for the user
+      localStorage.setItem(`${LINKEDIN_ANALYSIS_PREFIX}${userId}`, JSON.stringify(analysis));
+
+      // 2. Persist to Supabase Auth metadata if configured
+      if (isSupabaseConfigured && supabase) {
+        await supabase.auth.updateUser({
+          data: {
+            student_twin_linkedin_analysis: analysis,
+          },
+        });
+      }
+    } catch (err) {
+      console.warn('Failed to persist LinkedIn analysis to Supabase:', err);
+    }
+  },
+
+  // Get Latest LinkedIn Readiness Analysis
+  async getLatestLinkedinAnalysis(
+    userId: string
+  ): Promise<LinkedInReadinessAnalysis | null> {
+    if (!userId || userId === 'guest_user') return null;
+
+    // 1. Check Supabase metadata
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (!error && user?.id === userId && user.user_metadata?.student_twin_linkedin_analysis) {
+          const remote = user.user_metadata.student_twin_linkedin_analysis as LinkedInReadinessAnalysis;
+          // Keep local cache in sync
+          localStorage.setItem(`${LINKEDIN_ANALYSIS_PREFIX}${userId}`, JSON.stringify(remote));
+          return remote;
+        }
+      } catch (err) {
+        console.warn('Supabase remote LinkedIn analysis fetch note:', err);
+      }
+    }
+
+    // 2. Check local storage cache
+    try {
+      const raw = localStorage.getItem(`${LINKEDIN_ANALYSIS_PREFIX}${userId}`);
+      if (raw) {
+        return JSON.parse(raw) as LinkedInReadinessAnalysis;
+      }
+    } catch (e) {
+      console.error('Failed to parse local LinkedIn analysis:', e);
+    }
+
+    return null;
+  },
+
+  // Save Project Depth Analysis for specific (userId, projectId)
+  async saveProjectAnalysis(
+    userId: string,
+    projectId: string,
+    analysis: ProjectAnalysisRecord
+  ): Promise<void> {
+    if (!userId || !projectId) return;
+
+    try {
+      // 1. Save to local storage cache specifically keyed by userId + projectId
+      localStorage.setItem(`${PROJECT_ANALYSIS_PREFIX}${userId}_${projectId}`, JSON.stringify(analysis));
+
+      // 2. Persist to Supabase Auth metadata dictionary if configured
+      if (isSupabaseConfigured && supabase && userId !== 'guest_user') {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user?.id === userId) {
+          const currentMap = user.user_metadata?.student_twin_project_analyses || {};
+          await supabase.auth.updateUser({
+            data: {
+              student_twin_project_analyses: {
+                ...currentMap,
+                [projectId]: analysis,
+              },
+            },
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to persist project analysis to Supabase:', err);
+    }
+  },
+
+  // Get Saved Project Depth Analysis for specific (userId, projectId)
+  async getProjectAnalysis(
+    userId: string,
+    projectId: string
+  ): Promise<ProjectAnalysisRecord | null> {
+    if (!userId || !projectId) return null;
+
+    // 1. Check Supabase metadata
+    if (isSupabaseConfigured && supabase && userId !== 'guest_user') {
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (!error && user?.id === userId && user.user_metadata?.student_twin_project_analyses?.[projectId]) {
+          const remote = user.user_metadata.student_twin_project_analyses[projectId] as ProjectAnalysisRecord;
+          localStorage.setItem(`${PROJECT_ANALYSIS_PREFIX}${userId}_${projectId}`, JSON.stringify(remote));
+          return remote;
+        }
+      } catch (err) {
+        console.warn('Supabase remote project analysis fetch note:', err);
+      }
+    }
+
+    // 2. Check local storage cache
+    try {
+      const raw = localStorage.getItem(`${PROJECT_ANALYSIS_PREFIX}${userId}_${projectId}`);
+      if (raw) {
+        return JSON.parse(raw) as ProjectAnalysisRecord;
+      }
+    } catch (e) {
+      console.error('Failed to parse local project analysis:', e);
+    }
+
+    return null;
+  },
 };
+

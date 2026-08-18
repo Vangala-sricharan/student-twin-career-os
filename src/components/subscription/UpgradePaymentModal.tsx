@@ -154,9 +154,8 @@ export const UpgradePaymentModal: React.FC<UpgradePaymentModalProps> = ({
         onSuccess(verifiedPlan);
       }
     } catch (e) {
-      const errMessage = e instanceof Error ? e.message : 'Subscription persistence failed.';
-      console.error('[Payment Upgrade Persistence Error]:', errMessage);
-      setPersistenceError(errMessage);
+      console.error('[Payment Upgrade Persistence Error]:', e);
+      setPersistenceError('Payment was simulated, but your subscription could not be saved. Please try again.');
       setPaymentState('scan');
     }
   };
@@ -366,22 +365,23 @@ export const UpgradePaymentModal: React.FC<UpgradePaymentModalProps> = ({
                   Simulated Payment Successful!
                 </h4>
                 <p className="text-xs text-slate-600 dark:text-slate-400 max-w-sm">
-                  Your account has been upgraded to <strong>{planDetails.id === 'pro_monthly' ? 'PRO MONTHLY' : 'PRO ANNUAL'}</strong> ({planDetails.amountINR} {planDetails.periodText}). This plan status is securely saved to your account and preserved across sessions.
+                  Your {planDetails.id === 'pro_monthly' ? 'Pro Monthly' : 'Pro Annual'} plan is now active.
                 </p>
               </div>
 
               <div className="w-full p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs font-semibold text-emerald-800 dark:text-emerald-300 space-y-1">
                 <div>Plan: {planDetails.name}</div>
                 <div>Account: {user?.email}</div>
+                <div>Billing: {planDetails.id === 'pro_monthly' ? '₹299 / month' : '₹1,499 / year'}</div>
                 <div>Status: Active (Persisted)</div>
               </div>
 
               <button
-                id="payment-modal-success-done-btn"
+                id="payment-modal-success-continue-btn"
                 onClick={handleClose}
                 className="w-full py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs sm:text-sm shadow-md cursor-pointer transition-all"
               >
-                Access Pro Twin Workspace
+                Continue to Student Twin
               </button>
             </div>
           )}

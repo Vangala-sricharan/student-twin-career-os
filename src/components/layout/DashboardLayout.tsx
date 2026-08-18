@@ -20,6 +20,7 @@ import {
   Briefcase,
   Sliders,
   Github,
+  Linkedin,
   Zap,
   Settings,
   LogOut,
@@ -166,6 +167,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
         { id: 'internship-readiness', label: 'Internship Readiness', icon: Briefcase },
         { id: 'career-simulator', label: 'Career Simulator', icon: Sliders },
         { id: 'github-readiness', label: 'GitHub Readiness', icon: Github },
+        { id: 'linkedin-readiness', label: 'LinkedIn Readiness', icon: Linkedin },
       ],
     },
     {

@@ -1,4 +1,5 @@
 import { UserProfile, Skill, Project, Achievement, CareerGoal, ReadinessScore } from '../types';
+import { analyzeProjectEvidenceLocally } from './projectAnalysisService';
 
 export interface AIInsightsResult {
   strongAreas: string[];
@@ -498,66 +499,26 @@ export function analyzeProjectTechnicalDepth(
   githubUrl?: string,
   liveUrl?: string
 ): ProjectAnalysisResult {
-  const combined = `${title} ${description} ${techStack.join(' ')}`.toLowerCase();
-
-  let depthScore = 60;
-  if (techStack.length >= 3) depthScore += 10;
-  if (techStack.length >= 5) depthScore += 8;
-  if (githubUrl && githubUrl.includes('github.com')) depthScore += 10;
-  if (liveUrl && liveUrl.trim().length > 0) depthScore += 12;
-
-  const hasAdvancedTech = ['pytorch', 'docker', 'redis', 'fastapi', 'kubernetes', 'typescript', 'grpc', 'kafka'].some(t => combined.includes(t));
-  if (hasAdvancedTech) depthScore += 10;
-
-  depthScore = Math.min(98, Math.max(45, depthScore));
-
-  let complexityRating: ProjectAnalysisResult['complexityRating'] = 'Moderate';
-  if (depthScore >= 88) complexityRating = 'Advanced Systems';
-  else if (depthScore >= 75) complexityRating = 'Production-Ready';
-  else if (depthScore >= 55) complexityRating = 'Moderate';
-  else complexityRating = 'Foundational';
-
-  const technologiesEvaluated = techStack.map(t => ({
-    name: t,
-    relevance: 'High Industry Demand',
-    industryDemand: 'Tier-1 tech companies actively recruit for this stack',
-  }));
-
-  const realWorldValue = liveUrl
-    ? 'High: Hosted with live demonstration endpoints accessible to engineering interviewers.'
-    : 'Moderate: Strong code implementation, but adding a live deployed URL will multiply recruiter callback rates.';
-
-  const resumeImpactValue = depthScore >= 80
-    ? 'Tier-1 Candidate Project: Demonstrates architectural maturity, modern toolchain, and separation of concerns.'
-    : 'Strong Foundation Project: Ready for technical discussion; recommend adding concurrency or caching metrics.';
-
-  const architectureStrengths = [
-    `Clear modular stack integration (${techStack.slice(0, 3).join(', ')})`,
-    'Practical problem domain with direct portfolio relevance',
-  ];
-
-  const missingImprovements = [
-    'Add automated CI/CD GitHub Actions workflow for linting and automated unit tests.',
-    'Implement Redis cache or connection pooling to demonstrate backend performance tuning.',
-    'Include structured error handling and API request rate limiting.',
-  ];
-
-  const actionableRecommendations = [
-    'Record a 60-second Loom/GIF walkthrough and embed it at the top of your GitHub README.',
-    'Add benchmark statistics (e.g. "reduced response latency by 45% via Redis caching").',
-    'Write unit test suites achieving >80% code coverage.',
-  ];
+  const result = analyzeProjectEvidenceLocally({
+    userId: 'anonymous',
+    projectId: 'eval',
+    projectTitle: title,
+    description,
+    techStack,
+    githubUrl,
+    liveUrl,
+  });
 
   return {
-    projectTitle: title || 'Engineering Project',
-    technicalDepthScore: depthScore,
-    complexityRating,
-    technologiesEvaluated,
-    realWorldValue,
-    resumeImpactValue,
-    architectureStrengths,
-    missingImprovements,
-    actionableRecommendations,
+    projectTitle: result.projectTitle,
+    technicalDepthScore: result.technicalDepthScore,
+    complexityRating: result.complexityRating,
+    technologiesEvaluated: result.technologiesEvaluated,
+    realWorldValue: result.realWorldValue,
+    resumeImpactValue: result.resumeImpactValue,
+    architectureStrengths: result.architectureStrengths,
+    missingImprovements: result.missingImprovements,
+    actionableRecommendations: result.actionableRecommendations,
   };
 }
 

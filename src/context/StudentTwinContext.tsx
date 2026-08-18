@@ -86,18 +86,47 @@ export const DEFAULT_INITIAL_PROJECTS: Project[] = [
   {
     id: 'proj_vs_1',
     userId: 'student_vangala_sricharan',
-    title: 'AI Technical Depth Analyzer & Auto-Auditor',
-    description: 'Autonomous evaluation engine assessing architectural complexity, code modularity, and production gap analysis for student codebases.',
-    techStack: ['Python', 'FastAPI', 'PyTorch', 'React', 'Tailwind CSS'],
-    githubUrl: 'https://github.com/sricharan-ai/code-depth-analyzer',
-    liveUrl: 'https://depth-analyzer.ai.preview',
-    role: 'Lead Architect',
+    title: 'Student Digital Twin & Career Readiness OS',
+    description: 'Autonomous career readiness modeling engine assessing engineering skills, project depth, roadmap milestones, and ATS placement gaps using modern TypeScript and cloud synchronization.',
+    techStack: ['TypeScript', 'React', 'Tailwind CSS', 'Supabase', 'Node.js'],
+    githubUrl: 'https://github.com/vangala-sricharan/student-digital-twin',
+    liveUrl: 'https://student-twin.app.preview',
+    role: 'Lead Full-Stack Architect',
     status: 'Completed',
     difficulty: 'Production',
     year: '2025',
     createdAt: new Date().toISOString(),
   },
+  {
+    id: 'proj_vs_2',
+    userId: 'student_vangala_sricharan',
+    title: 'Restaurant Management & Kitchen Order Routing System',
+    description: 'Full-stack point-of-sale system with table reservation management, automated kitchen ticket dispatch, inventory tracking, and sales analytics.',
+    techStack: ['Node.js', 'Express', 'PostgreSQL', 'React', 'Socket.io'],
+    githubUrl: 'https://github.com/vangala-sricharan/restaurant-pos-manager',
+    liveUrl: '',
+    role: 'Backend & Database Developer',
+    status: 'Completed',
+    difficulty: 'Intermediate',
+    year: '2024',
+    createdAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString(),
+  },
+  {
+    id: 'proj_vs_3',
+    userId: 'student_vangala_sricharan',
+    title: 'AI Travel Planner & Dynamic Itinerary Optimizer',
+    description: 'Smart vacation planning application leveraging LLM agents, geolocation APIs, and constraint satisfaction algorithms for personalized budget-aware travel schedules.',
+    techStack: ['Python', 'FastAPI', 'Gemini AI', 'Next.js', 'Redis'],
+    githubUrl: 'https://github.com/vangala-sricharan/ai-travel-planner',
+    liveUrl: 'https://travel-ai-planner.preview.app',
+    role: 'AI Engineer & Frontend Developer',
+    status: 'In Progress',
+    difficulty: 'Advanced',
+    year: '2025',
+    createdAt: new Date(Date.now() - 15 * 24 * 3600 * 1000).toISOString(),
+  },
 ];
+
 
 export const DEFAULT_INITIAL_ACHIEVEMENTS: Achievement[] = [
   {
@@ -366,7 +395,6 @@ export const StudentTwinProvider: React.FC<{ children: React.ReactNode }> = ({ c
           loadedStudents = cloudData.students && cloudData.students.length > 0
             ? cloudData.students
             : [cloudData.profile];
-          if (cloudData.plan) setPlan(cloudData.plan);
           if (cloudData.lastUploadedAt) {
             setCloudSyncStatus((prev) => ({ ...prev, lastSyncedAt: cloudData?.lastUploadedAt || null }));
           }

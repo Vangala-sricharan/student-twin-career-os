@@ -1,5 +1,14 @@
 import { jsPDF } from 'jspdf';
-import { UserProfile, Skill, Project, Achievement, CareerGoal, ReadinessScore } from '../types';
+import {
+  UserProfile,
+  Skill,
+  Project,
+  Achievement,
+  CareerGoal,
+  ReadinessScore,
+  GitHubReadinessAnalysis,
+  LinkedInReadinessAnalysis,
+} from '../types';
 import {
   ResumeAnalysisResult,
   SyllabusAnalysisResult,
@@ -1158,7 +1167,7 @@ export async function exportCareerRoadmapPDF(
 // Project Analysis PDF
 export async function exportProjectAnalysisPDF(
   profile: UserProfile,
-  analysis: ProjectAnalysisResult,
+  analysis: any,
   isDemo: boolean = false
 ): Promise<void> {
   try {
@@ -1174,7 +1183,7 @@ export async function exportProjectAnalysisPDF(
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8.5);
     doc.setTextColor(100, 116, 139);
-    doc.text(`Candidate: ${profile.fullName || 'Student'} • Project: ${analysis.projectTitle}`, 15, y);
+    doc.text(`Candidate: ${profile.fullName || 'Student'} • Project: ${analysis.projectTitle || 'Project'}`, 15, y);
     y += 10;
 
     // Score Banner
@@ -1185,72 +1194,155 @@ export async function exportProjectAnalysisPDF(
     doc.setFontSize(8.5);
     doc.text('TECHNICAL DEPTH SCORE', 22, y + 8);
     doc.setFontSize(20);
-    doc.text(`${analysis.technicalDepthScore}/100`, 22, y + 19);
+    doc.text(`${analysis.technicalDepthScore || 0}/100`, 22, y + 19);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
-    doc.text(`Complexity Rating: ${analysis.complexityRating}`, 85, y + 12);
-    doc.text(`Resume Impact: ${analysis.resumeImpactValue}`, 85, y + 18);
+    doc.text(`Complexity Rating: ${analysis.complexityRating || 'Moderate'}`, 85, y + 10);
+    doc.text(`Resume Impact: ${analysis.rating || 'Evaluated'}`, 85, y + 15);
+    if (analysis.analysisDate) {
+      doc.text(`Audit Date: ${new Date(analysis.analysisDate).toLocaleDateString('en-US')}`, 85, y + 20);
+    }
     y += 33;
 
-    // Evaluated Tech
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10.5);
-    doc.setTextColor(30, 58, 138);
-    doc.text('TECHNOLOGIES EVALUATED & INDUSTRY DEMAND', 15, y);
-    y += 5;
-
-    analysis.technologiesEvaluated.forEach(t => {
-      y = checkPageBreak(doc, y, 8);
+    // Category Breakdown (if available)
+    if (analysis.categoryScores) {
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8);
-      doc.setTextColor(15, 23, 42);
-      doc.text(`• ${t.name}: `, 18, y + 4);
-
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(71, 85, 105);
-      doc.text(`${t.relevance} (Demand: ${t.industryDemand})`, 50, y + 4);
+      doc.setFontSize(10.5);
+      doc.setTextColor(30, 58, 138);
+      doc.text('EVALUATION CATEGORY BREAKDOWN', 15, y);
       y += 6;
-    });
-    y += 4;
 
-    // Architecture Strengths
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10.5);
-    doc.setTextColor(30, 58, 138);
-    doc.text('ARCHITECTURE STRENGTHS', 15, y);
-    y += 5;
+      const cats = [
+        { label: 'Architecture & System Design', score: analysis.categoryScores.architectureSystemDesign, max: 20 },
+        { label: 'Technical Complexity', score: analysis.categoryScores.technicalComplexity, max: 20 },
+        { label: 'Technology Stack', score: analysis.categoryScores.technologyStack, max: 15 },
+        { label: 'Data & Database Architecture', score: analysis.categoryScores.dataBackendDatabase, max: 15 },
+        { label: 'Security & Authentication', score: analysis.categoryScores.securityAuthentication, max: 10 },
+        { label: 'Scalability & Performance', score: analysis.categoryScores.scalabilityPerformance, max: 10 },
+        { label: 'Testing & Reliability', score: analysis.categoryScores.testingReliability, max: 5 },
+        { label: 'Deployment & DevOps', score: analysis.categoryScores.deploymentDevops, max: 5 },
+      ];
 
-    analysis.architectureStrengths.forEach(st => {
-      y = checkPageBreak(doc, y, 8);
-      doc.setFont('helvetica', 'normal');
       doc.setFontSize(8);
-      doc.setTextColor(22, 101, 52);
-      doc.text(`✓ ${st}`, 18, y + 4);
-      y += 6;
-    });
-    y += 4;
+      cats.forEach((cat, idx) => {
+        const isLeft = idx % 2 === 0;
+        const xPos = isLeft ? 18 : 105;
+        const currentY = y + Math.floor(idx / 2) * 5.5;
+
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(15, 23, 42);
+        doc.text(`• ${cat.label}:`, xPos, currentY);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(37, 99, 235);
+        doc.text(`${cat.score}/${cat.max}`, xPos + 60, currentY);
+      });
+
+      y += Math.ceil(cats.length / 2) * 5.5 + 4;
+    }
+
+    // Real-World Value & Resume Impact
+    if (analysis.realWorldValue || analysis.resumeImpact || analysis.resumeImpactValue) {
+      y = checkPageBreak(doc, y, 20);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10.5);
+      doc.setTextColor(30, 58, 138);
+      doc.text('REAL-WORLD VALUE & RECRUITER POSITIONING', 15, y);
+      y += 5;
+
+      if (analysis.realWorldValue) {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.setTextColor(15, 23, 42);
+        doc.text('Real-World Utility: ', 18, y + 4);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(51, 65, 85);
+        y = addWrappedText(doc, analysis.realWorldValue, 48, y + 4, 144, 4.2);
+        y += 2;
+      }
+
+      const impactTxt = analysis.resumeImpact || analysis.resumeImpactValue;
+      if (impactTxt) {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.setTextColor(15, 23, 42);
+        doc.text('Resume Impact: ', 18, y + 4);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(51, 65, 85);
+        y = addWrappedText(doc, impactTxt, 48, y + 4, 144, 4.2);
+        y += 4;
+      }
+    }
+
+    // Evaluated Tech
+    if (Array.isArray(analysis.technologiesEvaluated) && analysis.technologiesEvaluated.length > 0) {
+      y = checkPageBreak(doc, y, 15);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10.5);
+      doc.setTextColor(30, 58, 138);
+      doc.text('TECHNOLOGIES EVALUATED & INDUSTRY DEMAND', 15, y);
+      y += 5;
+
+      analysis.technologiesEvaluated.forEach((t: any) => {
+        y = checkPageBreak(doc, y, 8);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.setTextColor(15, 23, 42);
+        doc.text(`• ${t.name}: `, 18, y + 4);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(71, 85, 105);
+        doc.text(`${t.relevance} (Demand: ${t.industryDemand})`, 50, y + 4);
+        y += 6;
+      });
+      y += 4;
+    }
+
+    // Missing Production Upgrades
+    const missing = analysis.missingProductionUpgrades || analysis.missingImprovements || [];
+    if (Array.isArray(missing) && missing.length > 0) {
+      y = checkPageBreak(doc, y, 20);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10.5);
+      doc.setTextColor(180, 83, 9);
+      doc.text('MISSING PRODUCTION UPGRADES', 15, y);
+      y += 5;
+
+      missing.forEach((imp: string) => {
+        y = checkPageBreak(doc, y, 8);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(146, 64, 14);
+        y = addWrappedText(doc, `⚠ ${imp}`, 18, y + 4, 174, 4.2);
+        y += 2;
+      });
+      y += 4;
+    }
 
     // Actionable Recommendations
-    y = checkPageBreak(doc, y, 25);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10.5);
-    doc.setTextColor(30, 58, 138);
-    doc.text('ACTIONABLE RECRUITER POLISH RECOMMENDATIONS', 15, y);
-    y += 5;
-
-    analysis.actionableRecommendations.forEach((rec, idx) => {
-      y = checkPageBreak(doc, y, 10);
+    const recs = analysis.actionableRecommendations || [];
+    if (Array.isArray(recs) && recs.length > 0) {
+      y = checkPageBreak(doc, y, 25);
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8);
-      doc.setTextColor(37, 99, 235);
-      doc.text(`${idx + 1}.`, 18, y + 4);
+      doc.setFontSize(10.5);
+      doc.setTextColor(30, 58, 138);
+      doc.text('ACTIONABLE RECRUITER POLISH RECOMMENDATIONS', 15, y);
+      y += 5;
 
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(51, 65, 85);
-      y = addWrappedText(doc, rec, 24, y + 4, 168, 4.2);
-      y += 2;
-    });
+      recs.forEach((rec: string, idx: number) => {
+        y = checkPageBreak(doc, y, 10);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.setTextColor(37, 99, 235);
+        doc.text(`${idx + 1}.`, 18, y + 4);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(51, 65, 85);
+        y = addWrappedText(doc, rec, 24, y + 4, 168, 4.2);
+        y += 2;
+      });
+    }
 
     const numPages = doc.getNumberOfPages();
     for (let p = 1; p <= numPages; p++) {
@@ -1467,7 +1559,7 @@ export async function exportInternshipReadinessPDF(
 // GitHub Readiness PDF
 export async function exportGitHubReadinessPDF(
   profile: UserProfile,
-  analysis: GitHubReadinessResult,
+  analysis: GitHubReadinessAnalysis | GitHubReadinessResult,
   githubUrl: string,
   isDemo: boolean = false
 ): Promise<void> {
@@ -1493,14 +1585,22 @@ export async function exportGitHubReadinessPDF(
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
-    doc.text('OVERALL REPOSITORY REPUTATION', 22, y + 8);
+    doc.text('OVERALL GITHUB READINESS SCORE', 22, y + 8);
     doc.setFontSize(18);
     doc.text(`${analysis.overallScore}%`, 22, y + 18);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.text(`Profile Strength: ${analysis.profileStrength}`, 90, y + 12);
-    doc.text(`Project Quality: ${analysis.projectQuality}% | README Depth: ${analysis.readmeQuality}%`, 90, y + 17);
+    if ('categories' in analysis) {
+      doc.text(
+        `Projects: ${analysis.categories.projectQuality}/25 | README: ${analysis.categories.documentation}/20`,
+        90,
+        y + 17
+      );
+    } else {
+      doc.text(`Project Quality: ${analysis.projectQuality}% | README Depth: ${analysis.readmeQuality}%`, 90, y + 17);
+    }
     y += 30;
 
     // Checklist
@@ -1510,7 +1610,7 @@ export async function exportGitHubReadinessPDF(
     doc.text('RECRUITER SCREENING CHECKLIST', 15, y);
     y += 5;
 
-    analysis.checklist.forEach(chk => {
+    analysis.checklist.forEach((chk) => {
       y = checkPageBreak(doc, y, 8);
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(8);
@@ -1537,10 +1637,10 @@ export async function exportGitHubReadinessPDF(
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10.5);
     doc.setTextColor(30, 58, 138);
-    doc.text('HIGH-YIELD REPOSITORY POLISH RECOMMENDATIONS', 15, y);
+    doc.text('HIGH-YIELD REPOSITORY RECOMMENDATIONS', 15, y);
     y += 5;
 
-    analysis.recommendations.forEach((rec, idx) => {
+    analysis.recommendations.forEach((rec) => {
       y = checkPageBreak(doc, y, 8);
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(8);
@@ -1561,6 +1661,110 @@ export async function exportGitHubReadinessPDF(
   } catch (err) {
     console.error('Failed to export GitHub Readiness PDF:', err);
     throw new Error('GitHub Readiness PDF export failed.');
+  }
+}
+
+// LinkedIn Readiness PDF
+export async function exportLinkedInReadinessPDF(
+  profile: UserProfile,
+  analysis: LinkedInReadinessAnalysis,
+  profileUrl: string,
+  isDemo: boolean = false
+): Promise<void> {
+  try {
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    let y = 30;
+
+    doc.setTextColor(15, 23, 42);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(15);
+    doc.text('LINKEDIN PROFILE & RECRUITER READINESS AUDIT', 15, y);
+    y += 6;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Candidate: ${profile.fullName || 'Student'} • Profile: ${profileUrl}`, 15, y);
+    y += 10;
+
+    // Score Banner
+    doc.setFillColor(10, 102, 194); // LinkedIn Blue #0A66C2
+    doc.roundedRect(15, y, 180, 24, 2, 2, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.text('OVERALL LINKEDIN RECRUITER READINESS', 22, y + 8);
+    doc.setFontSize(18);
+    doc.text(`${analysis.overallScore}%`, 22, y + 18);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.text(`Readiness Tier: ${analysis.readinessTier}`, 90, y + 12);
+    doc.text(
+      `Headline: ${analysis.categories.headlinePositioning}/15 | Skills: ${analysis.categories.skillsTechnicalStack}/15 | Projects: ${analysis.categories.projectsPortfolio}/15`,
+      90,
+      y + 17
+    );
+    y += 30;
+
+    // Checklist
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10.5);
+    doc.setTextColor(10, 102, 194);
+    doc.text('RECRUITER VISIBILITY & SEARCH CHECKLIST', 15, y);
+    y += 5;
+
+    analysis.checklist.forEach((chk) => {
+      y = checkPageBreak(doc, y, 8);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(15, 23, 42);
+      doc.text(chk.item, 18, y + 4);
+
+      doc.setFont('helvetica', 'bold');
+      if (chk.passed) {
+        doc.setTextColor(22, 101, 52);
+        doc.text('✓ Passed', 170, y + 4);
+      } else {
+        doc.setTextColor(185, 28, 28);
+        doc.text('Action Needed', 160, y + 4);
+      }
+
+      doc.setDrawColor(241, 245, 249);
+      doc.line(15, y + 6, 195, y + 6);
+      y += 7;
+    });
+    y += 4;
+
+    // Recommendations
+    y = checkPageBreak(doc, y, 20);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10.5);
+    doc.setTextColor(10, 102, 194);
+    doc.text('HIGH-IMPACT LINKEDIN PROFILE OPTIMIZATIONS', 15, y);
+    y += 5;
+
+    analysis.recommendations.forEach((rec) => {
+      y = checkPageBreak(doc, y, 8);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(51, 65, 85);
+      doc.text(`• ${rec}`, 18, y + 4);
+      y += 6;
+    });
+
+    const numPages = doc.getNumberOfPages();
+    for (let p = 1; p <= numPages; p++) {
+      doc.setPage(p);
+      addOfficialHeader(doc, 'LINKEDIN AUDIT', isDemo);
+    }
+    addOfficialFooters(doc, isDemo);
+
+    const safeName = (profile.fullName || 'Student').replace(/[^a-zA-Z0-9]/g, '_');
+    doc.save(`${safeName}_LinkedIn_Readiness_Audit.pdf`);
+  } catch (err) {
+    console.error('Failed to export LinkedIn Readiness PDF:', err);
+    throw new Error('LinkedIn Readiness PDF export failed.');
   }
 }
 

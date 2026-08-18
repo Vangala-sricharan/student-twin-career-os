@@ -152,6 +152,7 @@ export type ActiveTab =
   | 'internship-readiness'
   | 'career-simulator'
   | 'github-readiness'
+  | 'linkedin-readiness'
   | 'ai-hub'
   | 'subscription'
   | 'settings';
@@ -173,3 +174,185 @@ export interface CloudSyncStatus {
   isSyncing: boolean;
   error: string | null;
 }
+
+// GitHub Evidence & Analysis Types
+export interface GitHubProfileEvidence {
+  username: string;
+  profileUrl: string;
+  name?: string;
+  bio?: string;
+  avatarUrl?: string;
+  publicReposCount: number;
+  followersCount: number;
+  followingCount: number;
+  company?: string;
+  location?: string;
+  blog?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  hasProfileReadme: boolean;
+  profileReadmeSnippet?: string;
+  analyzedReposCount: number;
+  topLanguages: { language: string; count: number; percentage: number }[];
+  lastActivityDate: string | null;
+  totalStars: number;
+  totalForks: number;
+  hasLiveDemoLinks: boolean;
+  repositories: {
+    name: string;
+    description: string | null;
+    language: string | null;
+    stars: number;
+    forks: number;
+    updatedAt: string;
+    homepage: string | null;
+    topics: string[];
+    isFork: boolean;
+  }[];
+}
+
+export interface GitHubCategoryScores {
+  profileQuality: number; // Max 15
+  projectQuality: number; // Max 25
+  documentation: number; // Max 20
+  organization: number; // Max 15
+  activity: number; // Max 15
+  engineeringPresentation: number; // Max 10
+}
+
+export interface GitHubReadinessAnalysis {
+  id: string;
+  userId: string;
+  platform: 'github';
+  profileUrl: string;
+  username: string;
+  analysisDate: string;
+  overallScore: number;
+  profileStrength: 'Basic' | 'Developing' | 'Competitive' | 'Top Tier';
+  categories: GitHubCategoryScores;
+  evidence: GitHubProfileEvidence;
+  strengths: string[];
+  weaknesses: string[];
+  recommendations: string[];
+  checklist: { item: string; passed: boolean; note?: string }[];
+}
+
+// LinkedIn Evidence & Analysis Types
+export interface LinkedInProfileEvidence {
+  profileUrl: string;
+  slug: string;
+  dataSource: 'pasted_text' | 'uploaded_pdf' | 'public_api';
+  headline?: string;
+  about?: string;
+  education?: string[];
+  skills?: string[];
+  certifications?: string[];
+  projects?: string[];
+  experience?: string[];
+  rawTextPreview?: string;
+  sectionPresence: {
+    headline: boolean;
+    about: boolean;
+    skills: boolean;
+    projects: boolean;
+    experience: boolean;
+    education: boolean;
+    certifications: boolean;
+  };
+}
+
+export interface LinkedInCategoryScores {
+  profileCompleteness: number; // Max 15
+  headlinePositioning: number; // Max 15
+  aboutSection: number; // Max 15
+  skillsTechnicalStack: number; // Max 15
+  projectsPortfolio: number; // Max 15
+  experienceInternships: number; // Max 10
+  educationCertifications: number; // Max 5
+  professionalPresentation: number; // Max 5
+  careerAlignment: number; // Max 5
+}
+
+export interface LinkedInReadinessAnalysis {
+  id: string;
+  userId: string;
+  platform: 'linkedin';
+  profileUrl: string;
+  analysisDate: string;
+  overallScore: number;
+  readinessTier: 'Needs Optimization' | 'Developing' | 'Recruiter-Ready' | 'Elite Positioning';
+  categories: LinkedInCategoryScores;
+  evidence: LinkedInProfileEvidence;
+  strengths: string[];
+  weaknesses: string[];
+  recommendations: string[];
+  checklist: { item: string; passed: boolean; note?: string }[];
+}
+
+// Project Depth Evidence & Analysis Types
+export interface ProjectCategoryScores {
+  architectureSystemDesign: number; // Max 20
+  technicalComplexity: number; // Max 20
+  technologyStack: number; // Max 15
+  dataBackendDatabase: number; // Max 15
+  securityAuthentication: number; // Max 10
+  scalabilityPerformance: number; // Max 10
+  testingReliability: number; // Max 5
+  deploymentDevops: number; // Max 5
+}
+
+export interface ProjectRepoEvidence {
+  repoFullName?: string;
+  name?: string;
+  description?: string | null;
+  stars?: number;
+  forks?: number;
+  primaryLanguage?: string | null;
+  hasReadme?: boolean;
+  readmeSnippet?: string;
+  lastPushedAt?: string | null;
+  topics?: string[];
+  isVerified: boolean;
+  verificationMessage: string;
+}
+
+export interface ProjectAnalysisEvidence {
+  projectId: string;
+  projectTitle: string;
+  description: string;
+  techStack: string[];
+  githubUrl?: string;
+  liveUrl?: string;
+  role?: string;
+  difficulty?: string;
+  status?: string;
+  githubRepoData?: ProjectRepoEvidence;
+  liveDemoVerified?: boolean;
+  hasDatabase: boolean;
+  hasAuth: boolean;
+  hasTesting: boolean;
+  hasCiCd: boolean;
+  hasDockerOrK8s: boolean;
+}
+
+export interface ProjectAnalysisRecord {
+  id: string; // analysis_id
+  userId: string; // user_id
+  projectId: string; // project_id
+  projectTitle: string;
+  analysisDate: string; // analysis_date
+  technicalDepthScore: number; // technical_depth_score (0-100)
+  complexityRating: 'Foundational' | 'Moderate' | 'Production-Ready' | 'Advanced Systems';
+  rating: 'High Impact' | 'Strong Impact' | 'Moderate Impact' | 'Needs Improvement';
+  realWorldValue: string;
+  resumeImpact: string;
+  resumeImpactValue: string;
+  missingProductionUpgrades: string[];
+  missingImprovements: string[];
+  actionableRecommendations: string[];
+  architectureStrengths: string[];
+  technologiesEvaluated: { name: string; relevance: string; industryDemand: string }[];
+  categoryScores: ProjectCategoryScores;
+  evidence: ProjectAnalysisEvidence;
+}
+

@@ -73,6 +73,7 @@ const AppContent: React.FC = () => {
         {activeTab === 'internship-readiness' && <AICareerHubPage initialTool="internship" />}
         {activeTab === 'career-simulator' && <AICareerHubPage initialTool="simulator" />}
         {activeTab === 'github-readiness' && <AICareerHubPage initialTool="github" />}
+        {activeTab === 'linkedin-readiness' && <AICareerHubPage initialTool="linkedin" />}
         
         {/* AI Hub Direct */}
         {activeTab === 'ai-hub' && <AICareerHubPage />}

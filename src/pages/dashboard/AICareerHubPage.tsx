@@ -10,6 +10,7 @@ import {
   Briefcase,
   Sliders,
   Github,
+  Linkedin,
   TrendingUp,
   Download,
   AlertCircle,
@@ -24,6 +25,7 @@ import { AIRoadmap30_60_90 } from '../../components/ai/AIRoadmap30_60_90';
 import { InternshipReadiness } from '../../components/ai/InternshipReadiness';
 import { WhatIfCareerSimulator } from '../../components/ai/WhatIfCareerSimulator';
 import { GitHubReadinessAnalyzer } from '../../components/ai/GitHubReadinessAnalyzer';
+import { LinkedInReadinessAnalyzer } from '../../components/ai/LinkedInReadinessAnalyzer';
 import { AICareerInsights } from '../../components/ai/AICareerInsights';
 import { exportStudentTwinPDF } from '../../lib/pdfExport';
 
@@ -37,7 +39,8 @@ type AIToolTab =
   | 'simulator'
   | 'project'
   | 'syllabus'
-  | 'github';
+  | 'github'
+  | 'linkedin';
 
 interface AICareerHubPageProps {
   initialTool?: AIToolTab;
@@ -67,6 +70,7 @@ export const AICareerHubPage: React.FC<AICareerHubPageProps> = ({ initialTool = 
     { id: 'project', name: 'Project Depth Analyzer', icon: FolderGit2, badge: 'Architecture' },
     { id: 'syllabus', name: 'Syllabus Analyzer', icon: BookOpen, badge: 'Curriculum' },
     { id: 'github', name: 'GitHub Readiness', icon: Github, badge: 'Reputation' },
+    { id: 'linkedin', name: 'LinkedIn Readiness', icon: Linkedin, badge: 'Recruiter' },
   ];
 
   const handleExportFullDossier = async () => {
@@ -172,6 +176,7 @@ export const AICareerHubPage: React.FC<AICareerHubPageProps> = ({ initialTool = 
         {activeTool === 'project' && <AIProjectAnalyzer />}
         {activeTool === 'syllabus' && <AISyllabusAnalyzer />}
         {activeTool === 'github' && <GitHubReadinessAnalyzer />}
+        {activeTool === 'linkedin' && <LinkedInReadinessAnalyzer />}
       </div>
     </div>
   );
