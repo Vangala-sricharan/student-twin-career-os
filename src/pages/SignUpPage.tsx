@@ -20,7 +20,7 @@ interface SignUpPageProps {
 }
 
 export const SignUpPage: React.FC<SignUpPageProps> = ({ setCurrentView, onSuccess }) => {
-  const { signUp, signInWithGoogle } = useAuth();
+  const { signUp, signInWithGoogle, resendVerificationEmail } = useAuth();
 
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -29,6 +29,9 @@ export const SignUpPage: React.FC<SignUpPageProps> = ({ setCurrentView, onSucces
 
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [isResending, setIsResending] = useState(false);
+  const [resendStatus, setResendStatus] = useState<{ success: boolean; message: string } | null>(null);
+  const [isVerificationPending, setIsVerificationPending] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
@@ -76,11 +79,14 @@ export const SignUpPage: React.FC<SignUpPageProps> = ({ setCurrentView, onSucces
     setIsLoading(true);
     setErrorMsg(null);
     setSuccessMsg(null);
+    setResendStatus(null);
 
     try {
-      const { error } = await signUp(email.trim(), password, fullName.trim());
+      const { error, requiresVerification } = await signUp(email.trim(), password, fullName.trim());
       if (error) {
         setErrorMsg(error.message || 'Failed to create account. Please try again.');
+      } else if (requiresVerification) {
+        setIsVerificationPending(true);
       } else {
         setSuccessMsg('Account created successfully! Loading your Digital Twin...');
         if (onSuccess) {
@@ -91,6 +97,33 @@ export const SignUpPage: React.FC<SignUpPageProps> = ({ setCurrentView, onSucces
       setErrorMsg(err instanceof Error ? err.message : 'An unexpected error occurred.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    if (!email.trim()) return;
+    setIsResending(true);
+    setResendStatus(null);
+    try {
+      const { error } = await resendVerificationEmail(email.trim());
+      if (error) {
+        setResendStatus({
+          success: false,
+          message: error.message || 'Failed to resend verification email.',
+        });
+      } else {
+        setResendStatus({
+          success: true,
+          message: 'Verification link resent! Please check your email inbox and spam folder.',
+        });
+      }
+    } catch (err) {
+      setResendStatus({
+        success: false,
+        message: 'Could not resend verification email.',
+      });
+    } finally {
+      setIsResending(false);
     }
   };
 
@@ -110,6 +143,76 @@ export const SignUpPage: React.FC<SignUpPageProps> = ({ setCurrentView, onSucces
       setIsGoogleLoading(false);
     }
   };
+
+  if (isVerificationPending) {
+    return (
+      <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-md w-full space-y-6 bg-white dark:bg-slate-900 p-8 sm:p-10 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl text-center">
+          <div className="mx-auto h-14 w-14 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center text-emerald-600 dark:text-emerald-400 mb-2">
+            <Mail className="w-7 h-7" />
+          </div>
+
+          <div>
+            <h2 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+              Account created successfully!
+            </h2>
+            <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+              Please check your email and click the verification link before signing in.
+            </p>
+          </div>
+
+          <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-mono text-slate-700 dark:text-slate-300 break-all">
+            {email}
+          </div>
+
+          {resendStatus && (
+            <div
+              className={`p-3.5 rounded-xl text-xs flex items-start gap-2.5 text-left ${
+                resendStatus.success
+                  ? 'bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
+                  : 'bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300'
+              }`}
+            >
+              {resendStatus.success ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+              ) : (
+                <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+              )}
+              <span>{resendStatus.message}</span>
+            </div>
+          )}
+
+          <div className="space-y-3 pt-2">
+            <button
+              id="resend-verification-btn"
+              type="button"
+              disabled={isResending}
+              onClick={handleResendVerification}
+              className="w-full py-2.5 px-4 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+            >
+              {isResending ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Resending verification email...</span>
+                </>
+              ) : (
+                <span>Resend verification email</span>
+              )}
+            </button>
+
+            <button
+              id="verification-back-to-login-btn"
+              type="button"
+              onClick={() => setCurrentView('login')}
+              className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md shadow-blue-500/25 transition-colors cursor-pointer"
+            >
+              Return to Sign In
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">

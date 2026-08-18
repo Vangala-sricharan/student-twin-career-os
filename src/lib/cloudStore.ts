@@ -153,17 +153,7 @@ export const cloudStore = {
     }
 
     try {
-      // 1. Update local cache
-      localStorage.setItem(`${USER_PLAN_PREFIX}${userId}`, plan);
-      
-      // 2. Also update in cloud payload if it exists
-      const existing = await this.getUserData(userId);
-      if (existing) {
-        existing.plan = plan;
-        localStorage.setItem(`${CLOUD_STORAGE_PREFIX}${userId}`, JSON.stringify(existing));
-      }
-
-      // 3. Persist authoritative subscription state to Supabase
+      // 1. Persist authoritative subscription state to Supabase
       if (isSupabaseConfigured && supabase) {
         const subscriptionRecord = {
           user_id: userId,
@@ -175,8 +165,11 @@ export const cloudStore = {
           updated_at: new Date().toISOString(),
         };
 
-        // Update user metadata in Supabase Auth (authoritative)
-        const { data: updateData, error: authUpdateError } = await supabase.auth.updateUser({
+        // Existing backup payload if any
+        const existing = await this.getUserData(userId);
+
+        // 1. Update user metadata in Supabase Auth (authoritative)
+        const { error: authUpdateError } = await supabase.auth.updateUser({
           data: {
             student_twin_plan: plan,
             student_twin_subscription: subscriptionRecord,
@@ -194,31 +187,44 @@ export const cloudStore = {
           throw new Error(`Supabase Auth Update Failed: ${authUpdateError.message}`);
         }
 
-        console.log('[Supabase Auth updateUser Success]:', {
-          userId: updateData?.user?.id,
-          savedPlan: updateData?.user?.user_metadata?.student_twin_plan,
-        });
-
-        // Update subscriptions table if it exists in project schema
-        const { error: subTableError } = await supabase.from('subscriptions').upsert(subscriptionRecord);
-        if (subTableError) {
-          console.warn('[Supabase Subscriptions Table Notice]:', {
-            message: subTableError.message,
-            code: subTableError.code,
-            details: subTableError.details,
-            hint: subTableError.hint,
+        // 2. Read back user metadata from Supabase to verify write
+        const { data: verifyData, error: verifyError } = await supabase.auth.getUser();
+        if (verifyError) {
+          console.error('[Supabase Auth getUser Verification Error]:', {
+            message: verifyError.message,
+            status: verifyError.status,
+            code: (verifyError as any).code,
+            userId,
           });
+          throw new Error(`Failed to verify subscription with Supabase: ${verifyError.message}`);
         }
 
-        // Update profiles table if it exists in project schema
-        const { error: profTableError } = await supabase.from('profiles').update({ plan }).eq('id', userId);
-        if (profTableError) {
-          console.warn('[Supabase Profiles Table Notice]:', {
-            message: profTableError.message,
-            code: profTableError.code,
-            details: profTableError.details,
-            hint: profTableError.hint,
-          });
+        const verifiedPlan = verifyData?.user?.user_metadata?.student_twin_plan;
+        if (verifiedPlan !== plan) {
+          const mismatchErr = `Verification failed: expected plan "${plan}", but Supabase returned "${verifiedPlan}".`;
+          console.error('[Supabase Plan Verification Failed]:', mismatchErr);
+          throw new Error(mismatchErr);
+        }
+
+        console.log('[Supabase Auth Subscription Persisted & Verified]:', {
+          userId: verifyData.user.id,
+          verifiedPlan,
+          subscriptionRecord,
+        });
+
+        // 3. Keep local cache in sync only after successful backend verification
+        localStorage.setItem(`${USER_PLAN_PREFIX}${userId}`, plan);
+        if (existing) {
+          existing.plan = plan;
+          localStorage.setItem(`${CLOUD_STORAGE_PREFIX}${userId}`, JSON.stringify(existing));
+        }
+      } else {
+        // Fallback local persistence only when Supabase is not configured
+        localStorage.setItem(`${USER_PLAN_PREFIX}${userId}`, plan);
+        const existing = await this.getUserData(userId);
+        if (existing) {
+          existing.plan = plan;
+          localStorage.setItem(`${CLOUD_STORAGE_PREFIX}${userId}`, JSON.stringify(existing));
         }
       }
 

@@ -78,7 +78,11 @@ export const SubscriptionUpgradePage: React.FC = () => {
   ];
 
   const handleSelectPlan = (tierId: string) => {
-    if (tierId === 'free' || tierId === plan) return;
+    const isTargetProCurrent =
+      (selectedBilling === 'yearly' && plan === 'pro_annual') ||
+      (selectedBilling === 'monthly' && plan === 'pro_monthly');
+
+    if (tierId === 'free' || isTargetProCurrent) return;
     if (tierId === 'pro_annual' || tierId === 'pro_monthly') {
       setPaymentModalOpen(true);
     }
@@ -162,9 +166,13 @@ export const SubscriptionUpgradePage: React.FC = () => {
       {/* Pricing Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {tiers.map((tier) => {
+          const isTargetProCurrent =
+            (selectedBilling === 'yearly' && plan === 'pro_annual') ||
+            (selectedBilling === 'monthly' && plan === 'pro_monthly');
+
           const isCurrent =
             (tier.id === 'free' && (plan === 'free' || !plan)) ||
-            (tier.id === 'pro_annual' && isCurrentPro) ||
+            (tier.id === 'pro_annual' && isTargetProCurrent) ||
             (tier.id === 'institution' && plan === 'institution');
 
           return (

@@ -7,11 +7,12 @@ interface AuthContextType {
   session: { access_token: string } | null;
   loading: boolean;
   isConfigured: boolean;
-  signUp: (email: string, password: string, fullName: string) => Promise<{ error: Error | null }>;
+  signUp: (email: string, password: string, fullName: string) => Promise<{ error: Error | null; requiresVerification?: boolean }>;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signInWithGoogle: () => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error: Error | null }>;
+  resendVerificationEmail: (email: string) => Promise<{ error: Error | null }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -117,22 +118,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
-  const signUp = useCallback(async (email: string, password: string, fullName: string): Promise<{ error: Error | null }> => {
+  const signUp = useCallback(async (email: string, password: string, fullName: string): Promise<{ error: Error | null; requiresVerification?: boolean }> => {
     const cleanEmail = email.trim().toLowerCase();
     const cleanName = fullName.trim();
     const runtimeUrl = isSupabaseConfigured ? supabaseUrl : 'local-fallback';
 
     try {
       if (isSupabaseConfigured && supabase) {
-        console.log('[Supabase Auth Debug] Executing supabase.auth.signUp:', {
+        console.log('[Supabase Auth Diagnostic] signUp request:', {
+          supabaseRuntimeUrl: runtimeUrl,
           email: cleanEmail,
-          runtimeSupabaseUrl: runtimeUrl,
         });
 
         const { data, error } = await supabase.auth.signUp({
           email: cleanEmail,
           password,
           options: {
+            emailRedirectTo: 'https://student-twin-career-os.vercel.app',
             data: {
               full_name: cleanName,
             },
@@ -140,58 +142,61 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
 
         if (error) {
-          console.error('[Supabase Auth Error] signUp failed:', {
+          console.error('[Supabase Auth Diagnostic] signUp error:', {
+            supabaseRuntimeUrl: runtimeUrl,
+            email: cleanEmail,
             message: error.message,
             status: error.status,
             code: (error as any).code,
-            name: error.name,
-            runtimeSupabaseUrl: runtimeUrl,
           });
-          return { error: new Error(error.message) };
+          return { error: new Error(error.message), requiresVerification: false };
         }
 
         // Supabase returns empty identities when an account with that email already exists
         if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
-          console.warn('[Supabase Auth Warning] User already registered with this email:', cleanEmail);
-          return { error: new Error('An account with this email already exists. Please log in using your password.') };
+          console.warn('[Supabase Auth Diagnostic] User already exists with email:', cleanEmail);
+          return { error: new Error('An account with this email already exists. Please log in using your password.'), requiresVerification: false };
         }
 
         if (data.user) {
-          console.log('[Supabase Auth Debug] signUp created user:', {
-            userId: data.user.id,
+          console.log('[Supabase Auth Diagnostic] signUp result:', {
+            supabaseRuntimeUrl: runtimeUrl,
+            authenticatedUserId: data.user.id,
             email: data.user.email,
             hasSession: Boolean(data.session),
-            emailConfirmedAt: (data.user as any).email_confirmed_at,
-            runtimeSupabaseUrl: runtimeUrl,
+            emailConfirmedAt: (data.user as any).email_confirmed_at || null,
           });
 
-          const authUser: AuthUser = {
-            id: data.user.id,
-            email: data.user.email || cleanEmail,
-            user_metadata: { full_name: cleanName, ...data.user.user_metadata },
-          };
-          setUser(authUser);
-
           if (data.session) {
+            // Real session exists
+            const authUser: AuthUser = {
+              id: data.user.id,
+              email: data.user.email || cleanEmail,
+              user_metadata: { full_name: cleanName, ...data.user.user_metadata },
+            };
+            setUser(authUser);
             setSession({ access_token: data.session.access_token });
+            return { error: null, requiresVerification: false };
           } else {
-            console.warn('[Supabase Auth Warning] signUp did not return an active session. If email confirmation is enabled in your Supabase project settings, the user must confirm email before logging in again with signInWithPassword.');
+            // Email confirmation is required by Supabase! DO NOT set React user or pretend authenticated.
+            console.log('[Supabase Auth Diagnostic] Signup succeeded but email verification is required before login.');
+            return { error: null, requiresVerification: true };
           }
         }
-        return { error: null };
+        return { error: null, requiresVerification: false };
       } else {
         // Fallback ONLY when Supabase keys are not configured
         const res = await fallbackAuth.signUp(cleanEmail, password, cleanName);
-        if (res.error) return { error: res.error };
+        if (res.error) return { error: res.error, requiresVerification: false };
         if (res.user) {
           setUser(res.user);
           setSession({ access_token: 'local_token_' + res.user.id });
         }
-        return { error: null };
+        return { error: null, requiresVerification: false };
       }
     } catch (e) {
-      console.error('[Auth Exception] signUp caught error:', e);
-      return { error: e instanceof Error ? e : new Error(String(e)) };
+      console.error('[Supabase Auth Diagnostic] signUp exception:', e);
+      return { error: e instanceof Error ? e : new Error(String(e)), requiresVerification: false };
     }
   }, []);
 
@@ -201,9 +206,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     try {
       if (isSupabaseConfigured && supabase) {
-        console.log('[Supabase Auth Debug] Executing supabase.auth.signInWithPassword:', {
+        console.log('[Supabase Auth Diagnostic] signInWithPassword request:', {
+          supabaseRuntimeUrl: runtimeUrl,
           email: cleanEmail,
-          runtimeSupabaseUrl: runtimeUrl,
         });
 
         const { data, error } = await supabase.auth.signInWithPassword({
@@ -212,22 +217,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
 
         if (error) {
-          console.error('[Supabase Auth Error] signInWithPassword failed:', {
+          console.error('[Supabase Auth Diagnostic] signInWithPassword error:', {
+            supabaseRuntimeUrl: runtimeUrl,
+            email: cleanEmail,
             message: error.message,
             status: error.status,
             code: (error as any).code,
-            name: error.name,
-            runtimeSupabaseUrl: runtimeUrl,
           });
+
+          const msgLower = (error.message || '').toLowerCase();
+          const errCode = ((error as any).code || '').toLowerCase();
+
+          if (
+            msgLower.includes('email not confirmed') ||
+            msgLower.includes('not verified') ||
+            msgLower.includes('email_not_confirmed') ||
+            errCode === 'email_not_confirmed'
+          ) {
+            return { error: new Error('Please verify your email before signing in.') };
+          }
+
+          if (
+            msgLower.includes('invalid login credentials') ||
+            msgLower.includes('invalid credentials') ||
+            errCode === 'invalid_credentials'
+          ) {
+            return { error: new Error('Invalid login credentials') };
+          }
+
           return { error: new Error(error.message) };
         }
 
         if (data.user && data.session) {
-          console.log('[Supabase Auth Debug] signInWithPassword SUCCESS:', {
+          console.log('[Supabase Auth Diagnostic] signInWithPassword SUCCESS:', {
+            supabaseRuntimeUrl: runtimeUrl,
             authenticatedUserId: data.user.id,
             email: data.user.email,
             hasSession: Boolean(data.session),
-            runtimeSupabaseUrl: runtimeUrl,
           });
 
           const authUser: AuthUser = {
@@ -250,7 +276,48 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { error: null };
       }
     } catch (e) {
-      console.error('[Auth Exception] signIn caught error:', e);
+      console.error('[Supabase Auth Diagnostic] signIn exception:', e);
+      return { error: e instanceof Error ? e : new Error(String(e)) };
+    }
+  }, []);
+
+  const resendVerificationEmail = useCallback(async (email: string): Promise<{ error: Error | null }> => {
+    const cleanEmail = email.trim().toLowerCase();
+    const runtimeUrl = isSupabaseConfigured ? supabaseUrl : 'local-fallback';
+
+    try {
+      if (isSupabaseConfigured && supabase) {
+        console.log('[Supabase Auth Diagnostic] resendVerificationEmail request:', {
+          supabaseRuntimeUrl: runtimeUrl,
+          email: cleanEmail,
+        });
+
+        const { error } = await supabase.auth.resend({
+          type: 'signup',
+          email: cleanEmail,
+          options: {
+            emailRedirectTo: 'https://student-twin-career-os.vercel.app',
+          },
+        });
+
+        if (error) {
+          console.error('[Supabase Auth Diagnostic] resendVerificationEmail error:', {
+            supabaseRuntimeUrl: runtimeUrl,
+            email: cleanEmail,
+            message: error.message,
+            status: error.status,
+            code: (error as any).code,
+          });
+          return { error: new Error(error.message) };
+        }
+
+        console.log('[Supabase Auth Diagnostic] resendVerificationEmail SUCCESS');
+        return { error: null };
+      } else {
+        return { error: null };
+      }
+    } catch (e) {
+      console.error('[Supabase Auth Diagnostic] resendVerificationEmail exception:', e);
       return { error: e instanceof Error ? e : new Error(String(e)) };
     }
   }, []);
@@ -354,6 +421,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signInWithGoogle,
         signOut,
         resetPassword,
+        resendVerificationEmail,
       }}
     >
       {children}

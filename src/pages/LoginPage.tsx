@@ -20,15 +20,17 @@ interface LoginPageProps {
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({ setCurrentView, onSuccess }) => {
-  const { signIn, signInWithGoogle, resetPassword } = useAuth();
+  const { signIn, signInWithGoogle, resetPassword, resendVerificationEmail } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const [isResending, setIsResending] = useState(false);
+  const [resendNotice, setResendNotice] = useState<string | null>(null);
 
   // Forgot password modal state
   const [forgotModalOpen, setForgotModalOpen] = useState(false);
@@ -40,6 +42,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ setCurrentView, onSuccess 
     e.preventDefault();
     setErrorMsg(null);
     setSuccessMsg(null);
+    setResendNotice(null);
 
     if (!email.trim() || !password) {
       setErrorMsg('Please provide both email and password.');
@@ -51,7 +54,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ setCurrentView, onSuccess 
     try {
       const { error } = await signIn(email.trim(), password);
       if (error) {
-        setErrorMsg(error.message || 'Invalid credentials. Please check your email and password.');
+        setErrorMsg(error.message || 'Invalid login credentials');
       } else {
         setSuccessMsg('Signed in successfully! Loading your Digital Twin...');
         if (onSuccess) {
@@ -62,6 +65,24 @@ export const LoginPage: React.FC<LoginPageProps> = ({ setCurrentView, onSuccess 
       setErrorMsg(err instanceof Error ? err.message : 'An unexpected login error occurred.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleResendFromLogin = async () => {
+    if (!email.trim()) return;
+    setIsResending(true);
+    setResendNotice(null);
+    try {
+      const { error } = await resendVerificationEmail(email.trim());
+      if (error) {
+        setResendNotice(`Failed to resend: ${error.message}`);
+      } else {
+        setResendNotice('Verification email resent! Please check your inbox and spam folder.');
+      }
+    } catch (err) {
+      setResendNotice('Could not resend verification email.');
+    } finally {
+      setIsResending(false);
     }
   };
 
@@ -139,9 +160,37 @@ export const LoginPage: React.FC<LoginPageProps> = ({ setCurrentView, onSuccess 
 
         {/* Error / Success feedback */}
         {errorMsg && (
-          <div className="p-4 rounded-xl bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-800/80 flex items-start gap-3 text-xs sm:text-sm text-red-700 dark:text-red-300">
-            <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
-            <span>{errorMsg}</span>
+          <div className="p-4 rounded-xl bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-800/80 space-y-2 text-xs sm:text-sm text-red-700 dark:text-red-300">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+              <span>{errorMsg}</span>
+            </div>
+            {errorMsg.toLowerCase().includes('verify') && (
+              <div className="pl-8 pt-1">
+                <button
+                  type="button"
+                  disabled={isResending || !email.trim()}
+                  onClick={handleResendFromLogin}
+                  className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  {isResending ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Resending verification email...</span>
+                    </>
+                  ) : (
+                    <span>Resend verification email to {email || 'your email'}</span>
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {resendNotice && (
+          <div className="p-3.5 rounded-xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-xs text-blue-700 dark:text-blue-300 flex items-start gap-2.5">
+            <CheckCircle2 className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
+            <span>{resendNotice}</span>
           </div>
         )}
 
